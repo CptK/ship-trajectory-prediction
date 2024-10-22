@@ -47,10 +47,14 @@ def build_trajectories(
     result = func(
         lambda x: pd.Series({
             'geometry': _create_geometry(x, min_points),
+            'mmsi': x["MMSI"].iloc[0],
+            'velocities': x["SOG"].tolist() if len(x) >= min_points else None,
+            'orientations': x["COG"].tolist() if len(x) >= min_points else None,
             'start_time': x["BaseDateTime"].min() if len(x) >= min_points else None,
             'end_time': x["BaseDateTime"].max() if len(x) >= min_points else None,
             'point_count': len(x),
-            'vessel_type': vessel_groups[int(x["VesselType"].iloc[0])]
+            'vessel_type': vessel_groups[int(x["VesselType"].iloc[0])],
+            'timestamps': x["BaseDateTime"].tolist() if len(x) >= min_points else None
         }) if len(x) >= min_points else None
     ).reset_index()
 
