@@ -12,26 +12,30 @@ from shapely.geometry import LineString
 from tqdm import tqdm
 from datetime import datetime
 from multiprocessing import Pool, cpu_count
-from prediction.preprocessing import calc_sog, timedelta_to_seconds
+from prediction.preprocessing import calc_sog, timedelta_to_seconds, haversine
 
 
 def _partition(
     track: np.ndarray | LineString,
     timestamps: np.ndarray | list[datetime],
     sogs: list[float] | np.ndarray,
-    threshold_partition: float = 5.0,
+    threshold_partition_sog: float = 5.0,
+    threshold_partition_distance: float = 50.0,
 ) -> dict[str, list[np.ndarray | list[datetime] | list[float]]]:
     """This function partitions a track into subtracks based on the speed over ground (SOG) values.
 
     The partitioning is done by comparing the calculated speed between two points with the given SOG value.
     If the difference between the calculated speed and the SOG value is greater than the threshold, the track
-    is partitioned at that point. 
+    is partitioned at that point. Additionally, the track is partitioned if the distance between two points is
+    greater than the given distance threshold.
 
     Args:
         track: Track to partition
         timestamps: Timestamps of the track points
         sogs: Speed over ground values of the track points
-        threshold_partition: Threshold for partitioning the track based on SOG values
+        threshold_partition_sog: Threshold for partitioning the track based on SOG values
+        threshold_partition_distance: Threshold for partitioning the track based on distance between points
+                                      in kilometers
     """
     if isinstance(track, LineString):
         track = np.array(track.xy).T
@@ -43,10 +47,11 @@ def _partition(
         time_delta = timedelta_to_seconds(timestamps[i] - timestamps[i - 1])
         lat1, lng1 = track[i - 1]
         lat2, lng2 = track[i]
-        speed = calc_sog(lat1, lng1, lat2, lng2, time_delta)
-        diff = abs(speed - sogs[i])
+        distance = haversine(lat1, lng1, lat2, lng2)
+        sog = calc_sog(lat1, lng1, lat2, lng2, time_delta)
+        diff = abs(sog - sogs[i])
 
-        if diff > threshold_partition:
+        if diff > threshold_partition_sog or distance > threshold_partition_distance:
             breakpts.append(i)
 
     if len(breakpts) == 1:
@@ -75,7 +80,8 @@ def _partition(
 
 def _association(
     subtracks: dict[str, list[np.ndarray | list[datetime] | list[float]]],
-    threshold_association: float = 15.0,
+    threshold_association_sog: float = 15.0,
+    threshold_association_distance: float = 50.0,
     threshold_completeness: int = 100,
 ):
     """This function associates subtracks based on the speed over ground (SOG) values.
@@ -84,11 +90,15 @@ def _association(
     first point of another track with the given threshold. If the speed is less than the threshold, the two
     tracks are associated. The association continues until no more tracks can be associated. Finally, the
     associated tracks are checked for completeness and only those with a length greater than the completeness
-    threshold are kept.
+    threshold are kept. Additionally, the distance between the last point of one track and the first point of
+    another track is checked, and the tracks are associated only if the distance is less than the given
+    distance threshold.
 
     Args:
         subtracks: Dictionary containing subtracks, timestamps, and SOG values
-        threshold_association: Threshold for associating tracks based on SOG values
+        threshold_association_sog: Threshold for associating tracks based on SOG values
+        threshold_association_distance: Threshold for associating tracks based on distance between points
+                                        in kilometers.
         threshold_completeness: Threshold for the minimum length of associated tracks
     """
     all_tracks, all_timestamps, all_sogs = subtracks["tracks"], subtracks["timestamps"], subtracks["sogs"]
@@ -104,9 +114,10 @@ def _association(
             lat1, lng1 = boat["track"][-1]
             lat2, lng2 = track[0]
             time_delta = timedelta_to_seconds(timestamps[0] - boat["timestamps"][-1])
-            speed = calc_sog(lat1, lng1, lat2, lng2, time_delta)
+            sog = calc_sog(lat1, lng1, lat2, lng2, time_delta)
+            distance = haversine(lat1, lng1, lat2, lng2)
 
-            if speed < threshold_association:
+            if sog < threshold_association_sog and distance < threshold_association_distance:
                 boat["track"] = np.concatenate((boat["track"], track))
                 boat["timestamps"].extend(timestamps)
                 boat["sogs"].extend(sogs)
