@@ -63,9 +63,10 @@ def load_data(start_date: datetime, end_date: datetime | None = None) -> pd.Data
         year, month, day = date.year, date.month, date.day
         save_path = Path(__file__).resolve().parents[2] / "data" / "raw"
         filename = _build_filename(year, month, day)
-        if (save_path / filename).exists():
-            df = pd.read_csv(save_path / filename, delimiter=",", encoding='utf-8', on_bad_lines="skip", header=0, parse_dates=["BaseDateTime"])
-            dfs.append(df)
+        if not (save_path / filename).exists():
+            download_data(date)
+        df = pd.read_csv(save_path / filename, delimiter=",", encoding='utf-8', on_bad_lines="skip", header=0, parse_dates=["BaseDateTime"])
+        dfs.append(df)
     final_df = pd.concat(dfs, ignore_index=True)
     final_df = final_df.sort_values(['MMSI', 'BaseDateTime'])
     df["VesselType"] = df["VesselType"].astype('Int64')
