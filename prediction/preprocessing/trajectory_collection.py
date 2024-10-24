@@ -30,7 +30,6 @@ def build_trajectories(
     min_points: int,
     vessel_groups: dict[int, str],
     verbose: bool = True,
-    default_vessel_group: str = "Other"
 ) -> pd.DataFrame:
     """Build trajectories from the given DataFrame.
 
