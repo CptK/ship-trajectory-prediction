@@ -17,19 +17,22 @@ dependencies = [
     "geopandas",
     "shapely",
     "pyyaml",
-    "ruff",
     "tqdm",
     "matplotlib",
     "seaborn",
     "dask",
     "dask-geopandas",
-    "scipy"
+    "scipy",
+    "torch"
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "pytest-cov",
+    "ruff",
+    "mypy",
+    "black"
 ]
 
 [tool.setuptools]
@@ -136,5 +139,9 @@ module = [
     "pandas.*",
     "matplotlib.*",
     "yaml.*",
+    "requests.*",
+    "shapely.*",
+    "tqdm.*",
+    "geopandas.*",
 ]
 ignore_missing_imports = true

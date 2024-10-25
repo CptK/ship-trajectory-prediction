@@ -10,7 +10,10 @@ def vessel_groups() -> dict:
     """Return a dictionary of vessel types and their corresponding descriptions."""
     vessel_types_path = DATA_PATH / "AIS_categories.csv"
     types_df = pd.read_csv(vessel_types_path)
-    categories = {r["num"]: r["category"] if r["category"] in [0,2,3,19,12,18] else 21 for i, r in types_df.iterrows()}
+    categories = {
+        r["num"]: r["category"] if r["category"] in [0, 2, 3, 19, 12, 18] else 21
+        for i, r in types_df.iterrows()
+    }
     categories[np.nan] = 0
 
     def category_desc(val):

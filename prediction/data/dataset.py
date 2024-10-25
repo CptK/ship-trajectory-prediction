@@ -1,13 +1,14 @@
-import numpy as np
-from torch.utils.data import Dataset
-import pandas as pd
 from multiprocessing import Pool, cpu_count
+
+import numpy as np
+import pandas as pd
+from torch.utils.data import Dataset
 from tqdm import tqdm
 
 
 class AISDataSet(Dataset):
     def __init__(
-        self, 
+        self,
         df: pd.DataFrame,
         n_pred: int,
         seq_len: int | None = None,
@@ -15,10 +16,10 @@ class AISDataSet(Dataset):
         include_orientation: bool = True,
         include_timestamps: bool = True,
         n_workers: int | None = None,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> None:
         """Initialize the dataset.
-        
+
         Args:
             df: DataFrame containing the AIS data. Following columns are expected:
                 - geometry: shapely.geometry.LineString
@@ -33,8 +34,8 @@ class AISDataSet(Dataset):
             n_workers: Number of workers to use for processing the data.
             verbose: Whether to show progress bars.
         """
-        self.X = []
-        self.y = []
+        self.X: list = []
+        self.y: list = []
         self.n_pred = n_pred
         self.seq_len = seq_len
         self.include_speed = include_speed
@@ -64,39 +65,39 @@ class AISDataSet(Dataset):
         y_timestatmps = timestamps[train_end_idx:]
         y_orientations = row["orientations"][train_end_idx:]
 
-        X = x_geometry
-        y = y_geometry
+        x_res = x_geometry
+        y_res = y_geometry
 
         if self.include_speed:
             # right now x has shape (n_points, 2), adding speed will make it (n_points, 3)
-            X = np.concatenate([X, np.array(x_velocities)[:, None]], axis=1)
-            y = np.concatenate([y, np.array(y_velocities)[:, None]], axis=1)
+            x_res = np.concatenate([x_res, np.array(x_velocities)[:, None]], axis=1)
+            y_res = np.concatenate([y_res, np.array(y_velocities)[:, None]], axis=1)
 
         if self.include_orientation:
-            X = np.concatenate([X, np.array(x_orientations)[:, None]], axis=1)
-            y = np.concatenate([y, np.array(y_orientations)[:, None]], axis=1)
+            x_res = np.concatenate([x_res, np.array(x_orientations)[:, None]], axis=1)
+            y_res = np.concatenate([y_res, np.array(y_orientations)[:, None]], axis=1)
 
         if self.include_timestamps:
-            X = np.concatenate([X, np.array(x_timestatmps)[:, None]], axis=1)
-            y = np.concatenate([y, np.array(y_timestatmps)[:, None]], axis=1)
+            x_res = np.concatenate([x_res, np.array(x_timestatmps)[:, None]], axis=1)
+            y_res = np.concatenate([y_res, np.array(y_timestatmps)[:, None]], axis=1)
 
-        return X, y
+        return x_res, y_res
 
     def _process_chunk(self, df: pd.DataFrame):
-        X, Y = [], []
+        x_res, y_res = [], []
         for _, row in tqdm(df.iterrows(), total=len(df), disable=not self.verbose):
             x, y = self._process_row(row)
-            X.append(x)
-            Y.append(y)
+            x_res.append(x)
+            y_res.append(y)
 
-        return X, Y
+        return x_res, y_res
 
     def _process_df(self, df: pd.DataFrame):
         chunk_size = len(df) // self.n_workers
         if chunk_size == 0:
             chunk_size = len(df)
 
-        chunks = [df.iloc[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
+        chunks = [df.iloc[i : i + chunk_size] for i in range(0, len(df), chunk_size)]
 
         with Pool(self.n_workers) as p:
             results = p.map(self._process_chunk, chunks)
@@ -107,7 +108,7 @@ class AISDataSet(Dataset):
 
     def __len__(self):
         return len(self.X)
-    
+
     def __getitem__(self, idx):
         """Get a single trajectory sample.
 
@@ -116,8 +117,8 @@ class AISDataSet(Dataset):
                 X: array of shape (seq_len, n_features)
                 y: array of shape (n_pred, n_features)
                 n_features depends on included features:
-                - 2 (lat, lon) + 
-                - 1 if include_speed + 
+                - 2 (lat, lon) +
+                - 1 if include_speed +
                 - 1 if include_orientation +
                 - 1 if include_timestamps
         """

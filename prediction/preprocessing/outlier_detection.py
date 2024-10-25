@@ -2,17 +2,38 @@
 
 The functionality implemented in this module is based on the following paper:
 Zhao L, Shi G, Yang J.
-Ship Trajectories Pre-processing Based on AIS Data. 
+Ship Trajectories Pre-processing Based on AIS Data.
 doi:10.1017/S0373463318000188
 """
+
+from datetime import datetime
+from multiprocessing import Pool, cpu_count
+from typing import TypedDict, cast
 
 import numpy as np
 import pandas as pd
 from shapely.geometry import LineString
 from tqdm import tqdm
-from datetime import datetime
-from multiprocessing import Pool, cpu_count
-from prediction.preprocessing import calc_sog, timedelta_to_seconds, haversine
+
+from prediction.preprocessing.utils import calc_sog, haversine, timedelta_to_seconds
+
+
+class BoatType(TypedDict):
+    """Type definition for a boat.
+    - track (np.ndarray): The track of the boat
+    - timestamps (list[datetime]): The timestamps of the track points
+    - sogs (list[float]): The speed over ground values of the track points
+    """
+
+    track: np.ndarray
+    timestamps: list[datetime]
+    sogs: list[float]
+
+
+class SubtrackType(TypedDict):
+    tracks: list[np.ndarray]
+    timestamps: list[list[datetime]]
+    sogs: list[list[float]]
 
 
 def _partition(
@@ -57,7 +78,7 @@ def _partition(
     if len(breakpts) == 1:
         return {"tracks": [track], "timestamps": [timestamps], "sogs": [sogs]}
 
-    subtracks = {"tracks": [], "timestamps": [], "sogs": []}
+    subtracks: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": []}
     for i in range(len(breakpts)):
         if i == 0:
             start, end = 0, breakpts[i]
@@ -65,14 +86,14 @@ def _partition(
             start, end = breakpts[i], len(sogs)
         else:
             start, end = breakpts[i], breakpts[i + 1]
-    
+
         if start != end:
             assert len(track[start:end]) == len(timestamps[start:end]) == len(sogs[start:end])
 
             subtracks["tracks"].append(track[start:end])
             subtracks["timestamps"].append(timestamps[start:end])
             subtracks["sogs"].append(sogs[start:end])
-            
+
     assert len(subtracks["tracks"]) == len(subtracks["timestamps"]) == len(subtracks["sogs"])
 
     return subtracks
@@ -101,13 +122,17 @@ def _association(
                                         in kilometers.
         threshold_completeness: Threshold for the minimum length of associated tracks
     """
-    all_tracks, all_timestamps, all_sogs = subtracks["tracks"], subtracks["timestamps"], subtracks["sogs"]
+    all_tracks: list[np.ndarray] = cast(list[np.ndarray], subtracks["tracks"])
+    all_timestamps: list[list[datetime]] = cast(list[list[datetime]], subtracks["timestamps"])
+    all_sogs: list[list[float]] = cast(list[list[float]], subtracks["sogs"])
 
-    result = {"tracks": [], "timestamps": [], "sogs": []}
+    result: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": []}
 
     while len(all_tracks) > 1:
-        current_track, current_timestamps, current_sogs = all_tracks.pop(0), all_timestamps.pop(0), all_sogs.pop(0)
-        boat = {"track": current_track, "timestamps": current_timestamps, "sogs": current_sogs}
+        current_track = all_tracks.pop(0)
+        current_times = all_timestamps.pop(0)
+        current_sogs = all_sogs.pop(0)
+        boat: BoatType = {"track": current_track, "timestamps": current_times, "sogs": current_sogs}
         del_indices = []
         for i in range(len(all_tracks)):
             track, timestamps, sogs = all_tracks[i], all_timestamps[i], all_sogs[i]
@@ -132,7 +157,7 @@ def _association(
             del all_tracks[i]
             del all_timestamps[i]
             del all_sogs[i]
-    
+
     return result
 
 
@@ -173,7 +198,7 @@ def _remove_outliers_row(
 def _remove_outliers_chunk(args: tuple) -> list[pd.Series]:
     """
     Process a chunk of the DataFrame in a separate process.
-    
+
     Args:
         args: Tuple containing (chunk, thresholds, verbose)
     Returns:
@@ -182,16 +207,13 @@ def _remove_outliers_chunk(args: tuple) -> list[pd.Series]:
     chunk, thresholds, verbose = args
     new_rows = []
     iterator = tqdm(chunk.iterrows(), total=len(chunk), disable=not verbose)
-    
+
     for _, row in iterator:
         rows = _remove_outliers_row(
-            row,
-            thresholds['partition'],
-            thresholds['association'],
-            thresholds['completeness']
+            row, thresholds["partition"], thresholds["association"], thresholds["completeness"]
         )
         new_rows.extend(rows)
-    
+
     return new_rows
 
 
@@ -201,7 +223,7 @@ def remove_outliers_parallel(
     threshold_association: float = 15.0,
     threshold_completeness: float = 100.0,
     verbose: bool = True,
-    n_processes: int = None,
+    n_processes: int | None = None,
 ) -> pd.DataFrame:
     """
     Remove outliers from the input DataFrame using multiple processes.
@@ -211,7 +233,7 @@ def remove_outliers_parallel(
     completeness and only those with a length greater than the completeness threshold are kept. This algorithm
     follows the methodology described in the paper "Ship Trajectories Pre-processing Based on AIS Data" by
     Zhao L, Shi G, and Yang J.
-    
+
     Args:
         df: Input DataFrame
         threshold_partition: Partition threshold
@@ -219,42 +241,44 @@ def remove_outliers_parallel(
         threshold_completeness: Completeness threshold
         verbose: Whether to show progress bars
         n_processes: Number of processes to use (defaults to CPU count - 1)
-    
+
     Returns:
         DataFrame with outliers removed
     """
     n_processes = n_processes if n_processes else max(1, cpu_count() - 1)
 
     if n_processes == 1:
-        return remove_outliers(df, threshold_partition, threshold_association, threshold_completeness, verbose)
-    
+        return remove_outliers(
+            df, threshold_partition, threshold_association, threshold_completeness, verbose
+        )
+
     # Calculate chunk size
     chunk_size = len(df) // n_processes
     if chunk_size == 0:
         chunk_size = len(df)
-    
+
     # Split DataFrame into chunks
-    chunks = [df.iloc[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
-    
+    chunks = [df.iloc[i : i + chunk_size] for i in range(0, len(df), chunk_size)]
+
     # Prepare arguments for each process
     thresholds = {
-        'partition': threshold_partition,
-        'association': threshold_association,
-        'completeness': threshold_completeness
+        "partition": threshold_partition,
+        "association": threshold_association,
+        "completeness": threshold_completeness,
     }
     process_args = [(chunk, thresholds, verbose) for chunk in chunks]
-    
+
     # Process chunks in parallel
     with Pool(processes=n_processes) as pool:
         if verbose:
             print(f"Processing with {n_processes} processes...")
         results = pool.map(_remove_outliers_chunk, process_args)
-    
+
     # Combine results from all processes
     all_rows = []
     for chunk_results in results:
         all_rows.extend(chunk_results)
-    
+
     return pd.DataFrame(all_rows)
 
 

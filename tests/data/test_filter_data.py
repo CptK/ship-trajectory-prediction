@@ -1,6 +1,8 @@
-import pandas as pd
-from shapely.geometry import Polygon, LineString
 from unittest import TestCase
+
+import pandas as pd
+from shapely.geometry import LineString, Polygon
+
 from prediction.data import filter_data
 
 
@@ -9,7 +11,7 @@ class TestFilterData(TestCase):
         self.str1 = LineString([(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)])
         self.str2 = LineString([(2, 2), (3, 3), (4, 4)])
         self.str3 = LineString([(4, 4), (5, 5)])
-        self.str4 = LineString([(-.5, -.5), (-.5, 1), (0, 0), (1, 1), (2, 2)])
+        self.str4 = LineString([(-0.5, -0.5), (-0.5, 1), (0, 0), (1, 1), (2, 2)])
         self.str5 = LineString([(1, 4), (2, 7), (3, 5)])
         self.str6 = LineString([(-2, -2), (-1, -2), (0, -2)])
         self.str7 = LineString([(0, 0), (1, 1), (2, 2)])

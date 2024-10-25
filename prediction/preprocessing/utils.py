@@ -1,11 +1,13 @@
 from datetime import timedelta
+from typing import cast
+
 import numpy as np
 import torch
 
 
 def timedelta_to_seconds(delta: timedelta):
     """This function converts a timedelta object to seconds.
-    
+
     Args:
         delta: Timedelta object to convert to seconds
     """
@@ -31,14 +33,11 @@ def haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     delta_lng = lng2 - lng1
     a = (np.sin(delta_lat / 2) ** 2) + np.cos(lat1) * np.cos(lat2) * (np.sin(delta_lng / 2) ** 2)
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-    return 6371 * c # haversine distance
+    return 6371 * cast(float, c)  # haversine distance
 
 
 def haversine_tensor(
-    traj1: torch.Tensor,
-    traj2: torch.Tensor,
-    traj_reduction: str = "sum",
-    tensor_reduction: str = "mean"
+    traj1: torch.Tensor, traj2: torch.Tensor, traj_reduction: str = "sum", tensor_reduction: str = "mean"
 ) -> torch.Tensor:
     """Calculate the pairwise haversine distance between two sets of trajectories.
 
@@ -67,7 +66,7 @@ def haversine_tensor(
 
     a = (torch.sin(delta_lat / 2) ** 2) + torch.cos(lat1) * torch.cos(lat2) * (torch.sin(delta_lng / 2) ** 2)
     c = 2 * torch.arctan2(torch.sqrt(a), torch.sqrt(1 - a))
-    distance = 6371 * c # haversine distance in kilometers
+    distance = 6371 * c  # haversine distance in kilometers
 
     if traj_reduction == "sum":
         distance = distance.sum(dim=1)
@@ -96,4 +95,4 @@ def calc_sog(lat1: float, lng1: float, lat2: float, lng2: float, time: float) ->
         time: Time difference between the two points in seconds
     """
     distance = haversine(lat1, lng1, lat2, lng2)
-    return distance / (time + 1e-10) # add small number to avoid division by zero
+    return distance / (time + 1e-10)  # add small number to avoid division by zero

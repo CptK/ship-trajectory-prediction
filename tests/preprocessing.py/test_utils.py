@@ -1,5 +1,6 @@
-import torch
 from unittest import TestCase
+
+import torch
 
 from prediction.preprocessing.utils import haversine_tensor
 
@@ -8,9 +9,7 @@ class TestHaversine(TestCase):
     def setUp(self):
         red_opt = ["sum", "mean", "none"]
 
-        self.reduction_options = [
-            (traj_red, tensor_red) for traj_red in red_opt for tensor_red in red_opt
-        ]
+        self.reduction_options = [(traj_red, tensor_red) for traj_red in red_opt for tensor_red in red_opt]
 
     def _get_expected_shape(self, batch_size, seq_len, traj_red, tensor_red):
         if traj_red == "none":

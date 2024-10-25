@@ -1,9 +1,11 @@
+from datetime import datetime, timedelta
+from multiprocessing import Pool, cpu_count
+
 import pandas as pd
 from shapely.geometry import LineString, Point
 from tqdm import tqdm
-from multiprocessing import Pool, cpu_count
-from datetime import datetime, timedelta
-from prediction.data import load_data
+
+from prediction.data.loader import load_data
 
 
 def _create_geometry(group, min_points: int) -> LineString | None:
@@ -46,30 +48,33 @@ def build_trajectories(
         tqdm.pandas()
 
     df["VesselType"] = df["VesselType"].apply(lambda x: x if x in vessel_groups.keys() else 21)
-    func = df.groupby('MMSI').progress_apply if verbose else df.groupby('MMSI').apply
+    func = df.groupby("MMSI").progress_apply if verbose else df.groupby("MMSI").apply
 
     result = func(
-        lambda x: pd.Series({
-            'geometry': _create_geometry(x, min_points),
-            'mmsi': x["MMSI"].iloc[0],
-            'velocities': x["SOG"].tolist() if len(x) >= min_points else None,
-            'orientations': x["COG"].tolist() if len(x) >= min_points else None,
-            'start_time': x["BaseDateTime"].min() if len(x) >= min_points else None,
-            'end_time': x["BaseDateTime"].max() if len(x) >= min_points else None,
-            'point_count': len(x),
-            'vessel_type': vessel_groups[int(x["VesselType"].iloc[0])],
-            'timestamps': x["BaseDateTime"].tolist() if len(x) >= min_points else None
-        }) if len(x) >= min_points else None
+        lambda x: (
+            pd.Series(
+                {
+                    "geometry": _create_geometry(x, min_points),
+                    "mmsi": x["MMSI"].iloc[0],
+                    "velocities": x["SOG"].tolist() if len(x) >= min_points else None,
+                    "orientations": x["COG"].tolist() if len(x) >= min_points else None,
+                    "start_time": x["BaseDateTime"].min() if len(x) >= min_points else None,
+                    "end_time": x["BaseDateTime"].max() if len(x) >= min_points else None,
+                    "point_count": len(x),
+                    "vessel_type": vessel_groups[int(x["VesselType"].iloc[0])],
+                    "timestamps": x["BaseDateTime"].tolist() if len(x) >= min_points else None,
+                }
+            )
+            if len(x) >= min_points
+            else None
+        )
     ).reset_index()
 
     return result.dropna()
 
 
 def _load_and_build_single(
-    date: datetime,
-    min_points: int,
-    vessel_groups: dict[int, str],
-    verbose: bool = True
+    date: datetime, min_points: int, vessel_groups: dict[int, str], verbose: bool = True
 ) -> pd.DataFrame:
     """Load the data for the given date and build the trajectories.
 
@@ -92,8 +97,8 @@ def load_and_build(
     end_date: datetime,
     min_points: int,
     vessel_groups: dict[int, str],
-    n_processes: int = None,
-    verbose: bool = True
+    n_processes: int | None = None,
+    verbose: bool = True,
 ) -> pd.DataFrame:
     n_processes = n_processes if n_processes is not None else max(cpu_count() - 1, 1)
     all_dates = [start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)]
@@ -103,8 +108,7 @@ def load_and_build(
 
     with Pool(n_processes) as pool:
         results = pool.starmap(
-            _load_and_build_single,
-            [(date, min_points, vessel_groups, verbose) for date in all_dates]
+            _load_and_build_single, [(date, min_points, vessel_groups, verbose) for date in all_dates]
         )
 
     return pd.concat(results, ignore_index=True)

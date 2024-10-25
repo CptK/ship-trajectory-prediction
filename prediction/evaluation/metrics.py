@@ -1,16 +1,18 @@
-from typing import Callable
-import torch
+from collections.abc import Callable
+from typing import cast
+
 import numpy as np
-from shapely.geometry import LineString
+import torch
 from shapely import frechet_distance as shapely_frechet
 from shapely import hausdorff_distance as shapely_hausdorff
+from shapely.geometry import LineString
 
 
 def trajectory_metric(
     distance_function: Callable[[LineString, LineString], float | np.ndarray],
     y_true: torch.Tensor,
     y_pred: torch.Tensor,
-    reduction: str = "none"
+    reduction: str = "none",
 ) -> torch.Tensor:
     """
     Compute the trajectory-wise distance between two sets of trajectories using a given distance function.
@@ -33,7 +35,7 @@ def trajectory_metric(
     for i in range(y_true.shape[0]):
         y_true_string = LineString(y_true[i].cpu().detach().numpy())
         y_pred_string = LineString(y_pred[i].cpu().detach().numpy())
-        distances[i] = distance_function(y_true_string, y_pred_string)
+        distances[i] = cast(float, distance_function(y_true_string, y_pred_string))
 
     distances = distances.to(device)
 
@@ -58,7 +60,7 @@ def frechet_distance(y_true: torch.Tensor, y_pred: torch.Tensor, reduction: str 
         - Tensor of shape (1,) if reduction is "mean" or "sum".
     """
     return trajectory_metric(shapely_frechet, y_true, y_pred, reduction=reduction)
-    
+
 
 def hausdorff_distance(y_true: torch.Tensor, y_pred: torch.Tensor, reduction: str = "none") -> torch.Tensor:
     """

@@ -5,7 +5,7 @@ from shapely.geometry import Polygon
 def filter_data(data: pd.DataFrame, area_of_interest: Polygon, only_inside: bool = True):
     """
     Get all trajectories in the area defined by the borders.
-    
+
     Args:
         data: Dataframe with column "geometry" containing the trajectories in the form of shapely LineStrings.
         area_of_interest: Polygon defining the area of interest.
