@@ -1,5 +1,5 @@
 from .outlier_detection import remove_outliers, remove_outliers_parallel
-from .trajectory_collection import build_trajectories, load_and_build
+from .trajectory_collection import build_trajectories, load_and_build, validate_lengths
 from .utils import calc_sog, haversine, haversine_tensor, timedelta_to_seconds
 
 __all__ = [

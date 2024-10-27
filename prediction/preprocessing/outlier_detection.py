@@ -132,7 +132,8 @@ def _association(
         current_track = all_tracks.pop(0)
         current_times = all_timestamps.pop(0)
         current_sogs = all_sogs.pop(0)
-        boat: BoatType = {"track": current_track, "timestamps": current_times, "sogs": current_sogs}
+        #boat: BoatType = {"track": current_track, "timestamps": current_times, "sogs": current_sogs}
+        boat: BoatType = {"track": current_track, "timestamps": current_times, "sogs": list(current_sogs)}
         del_indices = []
         for i in range(len(all_tracks)):
             track, timestamps, sogs = all_tracks[i], all_timestamps[i], all_sogs[i]
