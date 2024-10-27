@@ -15,7 +15,7 @@ import pandas as pd
 from shapely.geometry import LineString
 from tqdm import tqdm
 
-from prediction.preprocessing.utils import calc_sog, haversine, timedelta_to_seconds
+from prediction.preprocessing.utils import calc_sog, haversine
 
 
 class BoatType(TypedDict):
@@ -30,10 +30,27 @@ class BoatType(TypedDict):
     sogs: list[float]
 
 
-class SubtrackType(TypedDict):
-    tracks: list[np.ndarray]
-    timestamps: list[list[datetime]]
-    sogs: list[list[float]]
+def validate_df(df: pd.DataFrame) -> None:
+    """Validate the input DataFrame.
+
+    This function validates the input DataFrame to ensure that it contains the required columns.
+
+    Args:
+        df: Input DataFrame
+    """
+    assert "geometry" in df.columns, "Input DataFrame must contain a 'geometry' column."
+    assert "timestamps" in df.columns, "Input DataFrame must contain a 'timestamps' column."
+    assert "velocities" in df.columns, "Input DataFrame must contain a 'velocities' column."
+
+    all_geoms = df["geometry"]
+
+    assert all(isinstance(geom, LineString) for geom in all_geoms), "All geometries must be LineStrings."
+
+    all_latitudes = [lat for geom in all_geoms for lat in geom.xy[1]]
+    all_longitudes = [lng for geom in all_geoms for lng in geom.xy[0]]
+
+    assert all(-90 <= lat <= 90 for lat in all_latitudes), "Latitude values must be between -90 and 90."
+    assert all(-180 <= lng <= 180 for lng in all_longitudes), "Longitude values must be between -180 and 180."
 
 
 def _partition(
@@ -65,9 +82,9 @@ def _partition(
 
     breakpts = [0]
     for i in range(1, len(sogs)):
-        time_delta = timedelta_to_seconds(timestamps[i] - timestamps[i - 1])
-        lat1, lng1 = track[i - 1]
-        lat2, lng2 = track[i]
+        time_delta = (timestamps[i] - timestamps[i - 1]).total_seconds()
+        lng1, lat1 = track[i - 1]
+        lng2, lat2 = track[i]
         distance = haversine(lat1, lng1, lat2, lng2)
         sog = calc_sog(lat1, lng1, lat2, lng2, time_delta)
         diff = abs(sog - sogs[i])
@@ -80,16 +97,15 @@ def _partition(
 
     subtracks: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": []}
     for i in range(len(breakpts)):
-        if i == 0:
-            start, end = 0, breakpts[i]
-        elif i == len(breakpts) - 1:
+        if i == len(breakpts) - 1:
+            # For the last breakpoint, take all remaining points
             start, end = breakpts[i], len(sogs)
         else:
+            # For all other breakpoints, take points up to the next breakpoint
             start, end = breakpts[i], breakpts[i + 1]
 
         if start != end:
             assert len(track[start:end]) == len(timestamps[start:end]) == len(sogs[start:end])
-
             subtracks["tracks"].append(track[start:end])
             subtracks["timestamps"].append(timestamps[start:end])
             subtracks["sogs"].append(sogs[start:end])
@@ -120,11 +136,15 @@ def _association(
         threshold_association_sog: Threshold for associating tracks based on SOG values
         threshold_association_distance: Threshold for associating tracks based on distance between points
                                         in kilometers.
-        threshold_completeness: Threshold for the minimum length of associated tracks
+        threshold_completeness: Threshold for the minimum length of associated tracks (number of points, <=)
     """
     all_tracks: list[np.ndarray] = cast(list[np.ndarray], subtracks["tracks"])
     all_timestamps: list[list[datetime]] = cast(list[list[datetime]], subtracks["timestamps"])
     all_sogs: list[list[float]] = cast(list[list[float]], subtracks["sogs"])
+
+    # if there is only one track, return it, if it is long enough
+    if len(all_tracks) == 1 and len(all_tracks[0]) >= threshold_completeness:
+        return {"tracks": all_tracks, "timestamps": all_timestamps, "sogs": all_sogs}
 
     result: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": []}
 
@@ -136,9 +156,9 @@ def _association(
         del_indices = []
         for i in range(len(all_tracks)):
             track, timestamps, sogs = all_tracks[i], all_timestamps[i], all_sogs[i]
-            lat1, lng1 = boat["track"][-1]
-            lat2, lng2 = track[0]
-            time_delta = timedelta_to_seconds(timestamps[0] - boat["timestamps"][-1])
+            lng1, lat1 = boat["track"][-1]
+            lng2, lat2 = track[0]
+            time_delta = (timestamps[0] - boat["timestamps"][-1]).total_seconds()
             sog = calc_sog(lat1, lng1, lat2, lng2, time_delta)
             distance = haversine(lat1, lng1, lat2, lng2)
 
@@ -148,7 +168,7 @@ def _association(
                 boat["sogs"].extend(sogs)
                 del_indices.append(i)
 
-        if len(boat["track"]) > threshold_completeness:
+        if len(boat["track"]) >= threshold_completeness:
             result["tracks"].append(boat["track"])
             result["timestamps"].append(boat["timestamps"])
             result["sogs"].append(boat["sogs"])
@@ -163,8 +183,10 @@ def _association(
 
 def _remove_outliers_row(
     row: pd.Series,
-    threshold_partition: float = 5.0,
-    threshold_association: float = 15.0,
+    threshold_partition_sog: float = 5.0,
+    threshold_partition_distance: float = 50.0,
+    threshold_association_sog: float = 15.0,
+    threshold_association_distance: float = 50.0,
     threshold_completeness: float = 100.0,
 ) -> list[pd.Series]:
     """Process a single row of a DataFrame and remove outliers from the track.
@@ -182,8 +204,10 @@ def _remove_outliers_row(
     timestamps = row["timestamps"]
     sogs = row["velocities"]
 
-    subtracks = _partition(track, timestamps, sogs, threshold_partition)
-    new_tracks = _association(subtracks, threshold_association, threshold_completeness)
+    subtracks = _partition(track, timestamps, sogs, threshold_partition_sog, threshold_partition_distance)
+    new_tracks = _association(
+        subtracks, threshold_association_sog, threshold_association_distance, threshold_completeness
+    )
 
     result = [row.copy() for _ in range(len(new_tracks["tracks"]))]
 
@@ -206,11 +230,15 @@ def _remove_outliers_chunk(args: tuple) -> list[pd.Series]:
     """
     chunk, thresholds, verbose = args
     new_rows = []
-    iterator = tqdm(chunk.iterrows(), total=len(chunk), disable=not verbose)
 
-    for _, row in iterator:
+    for _, row in tqdm(chunk.iterrows(), total=len(chunk), disable=not verbose):
         rows = _remove_outliers_row(
-            row, thresholds["partition"], thresholds["association"], thresholds["completeness"]
+            row=row,
+            threshold_partition_sog=thresholds["partition_sog"],
+            threshold_partition_distance=thresholds["partition_distance"],
+            threshold_association_sog=thresholds["association_sog"],
+            threshold_association_distance=thresholds["association_distance"],
+            threshold_completeness=thresholds["completeness"],
         )
         new_rows.extend(rows)
 
@@ -219,8 +247,10 @@ def _remove_outliers_chunk(args: tuple) -> list[pd.Series]:
 
 def remove_outliers_parallel(
     df: pd.DataFrame,
-    threshold_partition: float = 5.0,
-    threshold_association: float = 15.0,
+    threshold_partition_sog: float = 5.0,
+    threshold_partition_distance: float = 50.0,
+    threshold_association_sog: float = 15.0,
+    threshold_association_distance: float = 50.0,
     threshold_completeness: float = 100.0,
     verbose: bool = True,
     n_processes: int | None = None,
@@ -245,11 +275,34 @@ def remove_outliers_parallel(
     Returns:
         DataFrame with outliers removed
     """
+    if any(
+        threshold <= 0
+        for threshold in [
+            threshold_partition_sog,
+            threshold_partition_distance,
+            threshold_association_sog,
+            threshold_association_distance,
+            threshold_completeness,
+        ]
+    ):
+        raise ValueError("All thresholds must be greater than 0.")
+    
+    validate_df(df)
+
+    if n_processes is not None and n_processes <= 0:
+        raise ValueError("Number of processes must be greater than 0.")
+
     n_processes = n_processes if n_processes else max(1, cpu_count() - 1)
 
-    if n_processes == 1:
+    if n_processes == 1 or len(df) < 2:
         return remove_outliers(
-            df, threshold_partition, threshold_association, threshold_completeness, verbose
+            df=df,
+            threshold_partition_sog=threshold_partition_sog,
+            threshold_partition_distance=threshold_partition_distance,
+            threshold_association_sog=threshold_association_sog,
+            threshold_association_distance=threshold_association_distance,
+            threshold_completeness=threshold_completeness,
+            verbose=verbose,
         )
 
     # Calculate chunk size
@@ -262,8 +315,10 @@ def remove_outliers_parallel(
 
     # Prepare arguments for each process
     thresholds = {
-        "partition": threshold_partition,
-        "association": threshold_association,
+        "partition_sog": threshold_partition_sog,
+        "partition_distance": threshold_partition_distance,
+        "association_sog": threshold_association_sog,
+        "association_distance": threshold_association_distance,
         "completeness": threshold_completeness,
     }
     process_args = [(chunk, thresholds, verbose) for chunk in chunks]
@@ -284,8 +339,10 @@ def remove_outliers_parallel(
 
 def remove_outliers(
     df: pd.DataFrame,
-    threshold_partition: float = 5.0,
-    threshold_association: float = 15.0,
+    threshold_partition_sog: float = 5.0,
+    threshold_partition_distance: float = 50.0,
+    threshold_association_sog: float = 15.0,
+    threshold_association_distance: float = 50.0,
     threshold_completeness: float = 100.0,
     verbose: bool = True,
 ) -> pd.DataFrame:
@@ -304,10 +361,28 @@ def remove_outliers(
         threshold_completeness: Threshold for the minimum length of associated tracks
         verbose: Whether to show progress bars
     """
+    if any(
+        threshold <= 0
+        for threshold in [
+            threshold_partition_sog,
+            threshold_partition_distance,
+            threshold_association_sog,
+            threshold_association_distance,
+            threshold_completeness,
+        ]
+    ):
+        raise ValueError("All thresholds must be greater than 0.")
+
     new_rows = []
-    iterator = tqdm(df.iterrows(), total=len(df), disable=not verbose)
-    for _, row in iterator:
-        rows = _remove_outliers_row(row, threshold_partition, threshold_association, threshold_completeness)
+    for _, row in tqdm(df.iterrows(), total=len(df), disable=not verbose):
+        rows = _remove_outliers_row(
+            row=row,
+            threshold_partition_sog=threshold_partition_sog,
+            threshold_partition_distance=threshold_partition_distance,
+            threshold_association_sog=threshold_association_sog,
+            threshold_association_distance=threshold_association_distance,
+            threshold_completeness=threshold_completeness,
+        )
         new_rows.extend(rows)
 
-    return pd.DataFrame(new_rows)
+    return pd.DataFrame(new_rows, columns=df.columns)

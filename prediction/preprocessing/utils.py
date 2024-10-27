@@ -5,29 +5,31 @@ import numpy as np
 import torch
 
 
-def timedelta_to_seconds(delta: timedelta):
-    """This function converts a timedelta object to seconds.
-
-    Args:
-        delta: Timedelta object to convert to seconds
-    """
-    total_seconds = delta.total_seconds()
-    total_microseconds = delta.microseconds
-    return total_seconds + (total_microseconds / 1000000)
-
-
 def haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """This function calculates the haversine distance between two points given their coordinates.
 
     Args:
-        lat1: Latitude of the first point
-        lng1: Longitude of the first point
-        lat2: Latitude of the second point
-        lng2: Longitude of the second point
+        lat1: Latitude of the first point within [-90, 90]
+        lng1: Longitude of the first point within [-180, 180]
+        lat2: Latitude of the second point within [-90, 90]
+        lng2: Longitude of the second point within [-180, 180]
 
     Returns:
         The haversine distance between the two points in kilometers.
     """
+    if not (-90 <= lat1 <= 90):
+        print(f"lat1: {lat1}, lng1: {lng1}, lat2: {lat2}, lng2: {lng2}")
+        raise ValueError("Latitude of the first point must be within [-90, 90]")
+    if not (-90 <= lat2 <= 90):
+        print(f"lat1: {lat1}, lng1: {lng1}, lat2: {lat2}, lng2: {lng2}")
+        raise ValueError("Latitude of the second point must be within [-90, 90]")
+    if not (-180 <= lng1 <= 180):
+        print(f"lat1: {lat1}, lng1: {lng1}, lat2: {lat2}, lng2: {lng2}")
+        raise ValueError("Longitude of the first point must be within [-180, 180]")
+    if not (-180 <= lng2 <= 180):
+        print(f"lat1: {lat1}, lng1: {lng1}, lat2: {lat2}, lng2: {lng2}")
+        raise ValueError("Longitude of the second point must be within [-180, 180]")
+
     lat1, lng1, lat2, lng2 = map(np.deg2rad, [lat1, lng1, lat2, lng2])
     delta_lat = lat2 - lat1
     delta_lng = lng2 - lng1
@@ -93,6 +95,23 @@ def calc_sog(lat1: float, lng1: float, lat2: float, lng2: float, time: float) ->
         lat2: Latitude of the second point
         lng2: Longitude of the second point
         time: Time difference between the two points in seconds
+
+    Returns:
+        The speed between the two points in km/h.
     """
+    if time < 0:
+        raise ValueError("Time difference must be non-negative")
+    if not (-90 <= lat1 <= 90):
+        raise ValueError("Latitude of the first point must be within [-90, 90]")
+    if not (-90 <= lat2 <= 90):
+        raise ValueError("Latitude of the second point must be within [-90, 90]")
+    if not (-180 <= lng1 <= 180):
+        raise ValueError("Longitude of the first point must be within [-180, 180]")
+    if not (-180 <= lng2 <= 180):
+        raise ValueError("Longitude of the second point must be within [-180, 180]")
+
+    if (lat1 == lat2 and lng1 == lng2) or time == 0:
+        return 0.0
+
     distance = haversine(lat1, lng1, lat2, lng2)
-    return distance / (time + 1e-10)  # add small number to avoid division by zero
+    return distance / (time + 1e-10) * 3600  # convert to km/h, add small number to avoid division by zero
