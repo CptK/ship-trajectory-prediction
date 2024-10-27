@@ -143,5 +143,6 @@ module = [
     "shapely.*",
     "tqdm.*",
     "geopandas.*",
+    "psutil.*",
 ]
 ignore_missing_imports = true

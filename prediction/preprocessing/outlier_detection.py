@@ -187,7 +187,7 @@ def _remove_outliers_row(
     threshold_partition_distance: float = 50.0,
     threshold_association_sog: float = 15.0,
     threshold_association_distance: float = 50.0,
-    threshold_completeness: float = 100.0,
+    threshold_completeness: int = 100,
 ) -> list[pd.Series]:
     """Process a single row of a DataFrame and remove outliers from the track.
 
@@ -196,9 +196,11 @@ def _remove_outliers_row(
 
     Args:
         row: Input row containing track, timestamps, and SOG values
-        threshold_partition: Partition threshold
-        threshold_association: Association threshold
-        threshold_completeness: Completeness threshold
+        threshold_partition_sog: Threshold for partitioning the track based on SOG values
+        threshold_partition_distance: Threshold for partitioning the track based on distance between points km
+        threshold_association_sog: Threshold for associating tracks based on SOG values
+        threshold_association_distance: Threshold for associating tracks based on distance between points km
+        threshold_completeness: Threshold for the minimum length of associated tracks (number of points, <=)
     """
     track = row["geometry"]
     timestamps = row["timestamps"]
@@ -251,7 +253,7 @@ def remove_outliers_parallel(
     threshold_partition_distance: float = 50.0,
     threshold_association_sog: float = 15.0,
     threshold_association_distance: float = 50.0,
-    threshold_completeness: float = 100.0,
+    threshold_completeness: int = 100,
     verbose: bool = True,
     n_processes: int | None = None,
 ) -> pd.DataFrame:
@@ -266,11 +268,14 @@ def remove_outliers_parallel(
 
     Args:
         df: Input DataFrame
-        threshold_partition: Partition threshold
-        threshold_association: Association threshold
-        threshold_completeness: Completeness threshold
+        threshold_partition_sog: Threshold for partitioning the tracks based on SOG values
+        threshold_partition_distance: Threshold for partitioning the tracks based on distance between points
+        threshold_association_sog: Threshold for associating tracks based on SOG values
+        threshold_association_distance: Threshold for associating tracks based on distance between points
+        threshold_completeness: Threshold for the minimum length of associated tracks
         verbose: Whether to show progress bars
-        n_processes: Number of processes to use (defaults to CPU count - 1)
+        n_processes: Number of processes to use for parallel processing. If None, the number of processes is
+                     set to the number of available CPUs minus 1.
 
     Returns:
         DataFrame with outliers removed
@@ -286,7 +291,7 @@ def remove_outliers_parallel(
         ]
     ):
         raise ValueError("All thresholds must be greater than 0.")
-    
+
     validate_df(df)
 
     if n_processes is not None and n_processes <= 0:
@@ -343,7 +348,7 @@ def remove_outliers(
     threshold_partition_distance: float = 50.0,
     threshold_association_sog: float = 15.0,
     threshold_association_distance: float = 50.0,
-    threshold_completeness: float = 100.0,
+    threshold_completeness: int = 100,
     verbose: bool = True,
 ) -> pd.DataFrame:
     """Remove outliers from the input DataFrame using a single process.
@@ -356,8 +361,10 @@ def remove_outliers(
 
     Args:
         df: Input DataFrame
-        threshold_partition: Threshold for partitioning the tracks based on SOG values
-        threshold_association: Threshold for associating tracks based on SOG values
+        threshold_partition_sog: Threshold for partitioning the tracks based on SOG values
+        threshold_partition_distance: Threshold for partitioning the tracks based on distance between points
+        threshold_association_sog: Threshold for associating tracks based on SOG values
+        threshold_association_distance: Threshold for associating tracks based on distance between points
         threshold_completeness: Threshold for the minimum length of associated tracks
         verbose: Whether to show progress bars
     """

@@ -1,9 +1,9 @@
 from unittest import TestCase
 
-import torch
 import numpy as np
+import torch
 
-from prediction.preprocessing.utils import haversine_tensor, haversine, calc_sog
+from prediction.preprocessing.utils import calc_sog, haversine, haversine_tensor
 
 
 class TestHaversineTensor(TestCase):
