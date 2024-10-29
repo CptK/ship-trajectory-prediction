@@ -242,7 +242,15 @@ def _remove_outliers_chunk(args: tuple) -> list[pd.Series]:
             threshold_association_distance=thresholds["association_distance"],
             threshold_completeness=thresholds["completeness"],
         )
-        new_rows.extend(rows)
+        for row in rows:  # TODO: This is a bug, should be new_rows.extend(rows), right now orientations are
+            # not being filtered and matched with the corresponding new trajectory
+            geometry = row["geometry"]
+            orientations = row["orientations"]
+            velocities = row["velocities"]
+            timestamps = row["timestamps"]
+
+            if len(geometry.xy[0]) == len(orientations) == len(velocities) == len(timestamps):
+                new_rows.append(row)
 
     return new_rows
 
