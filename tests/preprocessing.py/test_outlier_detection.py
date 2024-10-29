@@ -624,6 +624,7 @@ class TestRemoveOutliersChunk(TestCase):
                     "timestamps": [self.base_time + timedelta(hours=j) for j in range(4)],
                     "velocities": [10.0] * 4,
                     "vessel_id": f"VESSEL_{i}",
+                    "orientations": [0.0] * 4,
                 }
             )
             rows.append(row)
@@ -648,6 +649,7 @@ class TestRemoveOutliersChunk(TestCase):
                     "timestamps": self.base_timestamps,
                     "velocities": self.base_sogs,
                     "vessel_id": "VESSEL_1",
+                    "orientations": [0.0] * 4,
                 }
             ]
         )
@@ -718,6 +720,7 @@ class TestRemoveOutliersChunk(TestCase):
                     "vessel_id": "VESSEL_1",
                     "vessel_type": "cargo",
                     "flag": "ABC",
+                    "orientations": [0.0] * 4,
                 }
             ]
         )
@@ -740,6 +743,7 @@ class TestRemoveOutliersChunk(TestCase):
                 "timestamps": self.base_timestamps,
                 "velocities": self.base_sogs,
                 "vessel_id": "VESSEL_1",
+                "orientations": [0.0] * 4,
             }
         )
         chunk = pd.DataFrame([row, row.copy()])
@@ -803,6 +807,7 @@ class TestRemoveOutliers(TestCase):
                 "velocities": [10.0] * 4,
                 "vessel_id": f"VESSEL_{i}",
                 "vessel_type": "cargo",
+                "orientations": [0.0] * 4,
             }
             data.append(row)
 
@@ -826,6 +831,7 @@ class TestRemoveOutliers(TestCase):
                     "timestamps": self.base_timestamps,
                     "velocities": self.base_velocities,
                     "vessel_id": "VESSEL_1",
+                    "orientations": [0.0] * 4,
                 }
             ]
         )
@@ -908,6 +914,7 @@ class TestRemoveOutliers(TestCase):
                     "int_field": 42,
                     "float_field": 3.14,
                     "bool_field": True,
+                    "orientations": [0.0] * 4,
                 }
             ]
         )
@@ -929,6 +936,7 @@ class TestRemoveOutliers(TestCase):
                     "timestamps": self.base_timestamps,
                     "velocities": self.base_velocities,
                     "extra_field": "test",
+                    "orientations": [0.0] * 4,
                 }
             ]
         )[
@@ -947,6 +955,7 @@ class TestRemoveOutliers(TestCase):
                     "vessel_id": "VESSEL_1",
                     "geometry": self.base_track,
                     # Missing 'timestamps' and 'velocities'
+                    "orientations": [0.0] * 4,
                 }
             ]
         )
@@ -1061,6 +1070,7 @@ class TestRemoveOutliersParallel(TestCase):
                 "velocities": [10.0] * 4,
                 "vessel_id": f"VESSEL_{i}",
                 "vessel_type": "cargo",
+                "orientations": [0.0] * 4,
             }
             data.append(row)
 
@@ -1147,7 +1157,7 @@ class TestRemoveOutliersParallel(TestCase):
 
     def test_empty_dataframe(self):
         """Test processing of empty DataFrame"""
-        df = pd.DataFrame(columns=["geometry", "timestamps", "velocities"])
+        df = pd.DataFrame(columns=["geometry", "timestamps", "velocities", "orientations"])
 
         result = remove_outliers_parallel(
             df, **self.default_thresholds, verbose=False, n_processes=2  # type: ignore
@@ -1168,6 +1178,7 @@ class TestRemoveOutliersParallel(TestCase):
                     "int_field": 42,
                     "float_field": 3.14,
                     "bool_field": True,
+                    "orientations": [0.0] * 4,
                 }
             ]
         )
@@ -1190,6 +1201,7 @@ class TestRemoveOutliersParallel(TestCase):
                     "timestamps": [self.base_time + timedelta(hours=i) for i in range(4)],
                     "velocities": [10.0] * 4,
                     "vessel_id": "VESSEL_1",
+                    "orientations": [0.0] * 4,
                 }
             ]
             * 10
