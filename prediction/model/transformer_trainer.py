@@ -210,27 +210,31 @@ class TrajectoryTrainer:
             metrics: Current training metrics
             is_best: Whether this is the best model so far
         """
-        if self.scheduler is None:
-            raise ValueError(
-                "Scheduler must be initialized before saving checkpoint (i.e. call train() first)"
-            )
-
         checkpoint = {
             "epoch": self.epoch,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
-            "scheduler_state_dict": self.scheduler.state_dict(),
             "metrics": metrics,
             "best_value": self.best_value,
             "train_step": self.train_step,
         }
 
+        # Only add scheduler state if it exists
+        if self.scheduler is not None:
+            checkpoint["scheduler_state_dict"] = self.scheduler.state_dict()
+
         # Save latest checkpoint
-        torch.save(checkpoint, self.checkpoint_dir / "latest.pt")
+        torch.save(
+            checkpoint,
+            self.checkpoint_dir / "latest.pt",
+        )
 
         # Save best checkpoint
         if is_best:
-            torch.save(checkpoint, self.checkpoint_dir / "best.pt")
+            torch.save(
+                checkpoint,
+                self.checkpoint_dir / "best.pt",
+            )
 
     def load_checkpoint(self, path: str) -> dict:
         """Load model checkpoint.
@@ -241,7 +245,7 @@ class TrajectoryTrainer:
         Returns:
             Loaded checkpoint dictionary
         """
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=True)  # Safe loading
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -249,6 +253,10 @@ class TrajectoryTrainer:
         self.epoch = checkpoint["epoch"]
         self.best_value = checkpoint["best_value"]
         self.train_step = checkpoint["train_step"]
+
+        # Only load scheduler state if it exists in checkpoint and scheduler is initialized
+        if "scheduler_state_dict" in checkpoint and self.scheduler is not None:
+            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
         return cast(dict, checkpoint)
 
