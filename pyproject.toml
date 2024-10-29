@@ -24,7 +24,8 @@ dependencies = [
     "dask",
     "dask-geopandas",
     "scipy",
-    "torch"
+    "torch",
+    "tensorboard"
 ]
 
 [project.optional-dependencies]
