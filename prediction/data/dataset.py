@@ -1,10 +1,10 @@
+import random
 from multiprocessing import Pool, cpu_count
 
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
 from tqdm import tqdm
-import random
 
 
 class AISDataSet(Dataset):
@@ -61,7 +61,9 @@ class AISDataSet(Dataset):
         start_time = row["timestamps"][0]
         timestamps = [(t - start_time).total_seconds() for t in row["timestamps"]]
 
-        assert len(geometry) == len(row["velocities"]) == len(row["orientations"]) == len(timestamps), f"Length mismatch: {len(geometry)} {len(row['velocities'])} {len(row['orientations'])} {len(timestamps)}"
+        assert (
+            len(geometry) == len(row["velocities"]) == len(row["orientations"]) == len(timestamps)
+        ), f"Mismatch: {len(geometry)} {len(row['velocities'])} {len(row['orientations'])} {len(timestamps)}"
 
         x_geometry = geometry[train_start_idx:train_end_idx]
         x_velocities = row["velocities"][train_start_idx:train_end_idx]
@@ -114,60 +116,72 @@ class AISDataSet(Dataset):
             self.X.extend(x)
             self.y.extend(y)
 
-    def _normalize(self, X: list, y: list):
-        normalized_X = []
+    def _normalize(self, X: list, y: list):  # noqa: N803
+        normalized_x = []
         normalized_y = []
-        
+
         # Process each sequence individually
         for seq_x, seq_y in zip(X, y):
             # Convert to numpy if not already
             seq_x = np.array(seq_x)
             seq_y = np.array(seq_y)
-            
+
             # Lat/Lon normalization
             seq_x[:, :2] /= np.array([90, 180])
             seq_y[:, :2] /= np.array([90, 180])
-            
+
             current_idx = 2
-            
+
             # Speed normalization
             if self.include_speed:
-                MAX_SPEED = 30.0
-                seq_x[:, current_idx] = np.clip(seq_x[:, current_idx], 0, MAX_SPEED) / MAX_SPEED * 2 - 1
-                seq_y[:, current_idx] = np.clip(seq_y[:, current_idx], 0, MAX_SPEED) / MAX_SPEED * 2 - 1
+                max_speed = 30.0  # TODO: make this a parameter
+                seq_x[:, current_idx] = np.clip(seq_x[:, current_idx], 0, max_speed) / max_speed * 2 - 1
+                seq_y[:, current_idx] = np.clip(seq_y[:, current_idx], 0, max_speed) / max_speed * 2 - 1
                 current_idx += 1
-            
+
             # Course normalization
             if self.include_orientation:
                 angles_x = np.deg2rad(seq_x[:, current_idx])
                 angles_y = np.deg2rad(seq_y[:, current_idx])
-                
+
                 sin_cos_x = np.column_stack([np.sin(angles_x), np.cos(angles_x)])
                 sin_cos_y = np.column_stack([np.sin(angles_y), np.cos(angles_y)])
-                
-                seq_x = np.column_stack([
-                    seq_x[:, :current_idx],
-                    sin_cos_x,
-                    seq_x[:, current_idx+1:] if current_idx+1 < seq_x.shape[1] else np.array([]).reshape(seq_x.shape[0], 0)
-                ])
-                
-                seq_y = np.column_stack([
-                    seq_y[:, :current_idx],
-                    sin_cos_y,
-                    seq_y[:, current_idx+1:] if current_idx+1 < seq_y.shape[1] else np.array([]).reshape(seq_y.shape[0], 0)
-                ])
-                
+
+                seq_x = np.column_stack(
+                    [
+                        seq_x[:, :current_idx],
+                        sin_cos_x,
+                        (
+                            seq_x[:, current_idx + 1 :]
+                            if current_idx + 1 < seq_x.shape[1]
+                            else np.array([]).reshape(seq_x.shape[0], 0)
+                        ),
+                    ]
+                )
+
+                seq_y = np.column_stack(
+                    [
+                        seq_y[:, :current_idx],
+                        sin_cos_y,
+                        (
+                            seq_y[:, current_idx + 1 :]
+                            if current_idx + 1 < seq_y.shape[1]
+                            else np.array([]).reshape(seq_y.shape[0], 0)
+                        ),
+                    ]
+                )
+
                 current_idx += 2
-            
+
             # Timestamp normalization
             if self.include_timestamps:
-                seq_x[:, current_idx] = np.log1p(seq_x[:, current_idx]) / np.log(24*3600)
-                seq_y[:, current_idx] = np.log1p(seq_y[:, current_idx]) / np.log(24*3600)
-            
-            normalized_X.append(seq_x)
+                seq_x[:, current_idx] = np.log1p(seq_x[:, current_idx]) / np.log(24 * 3600)
+                seq_y[:, current_idx] = np.log1p(seq_y[:, current_idx]) / np.log(24 * 3600)
+
+            normalized_x.append(seq_x)
             normalized_y.append(seq_y)
-        
-        return normalized_X, normalized_y
+
+        return normalized_x, normalized_y
 
     def __len__(self):
         return len(self.X)
@@ -203,7 +217,7 @@ class MaskedAISDataset(AISDataSet):
         random_mask_prob: float = 0.2,
         consecutive_mask_prob: float = 0.3,
         end_mask_prob: float = 0.5,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Initialize the masked trajectory dataset.
 
@@ -224,7 +238,7 @@ class MaskedAISDataset(AISDataSet):
             ValueError: If any probability is negative
         """
         super().__init__(df, n_pred=0, seq_len=None, **kwargs)
-        
+
         self.max_seq_len = max_seq_len
         self.random_mask_ratio = random_mask_ratio
         self.consecutive_mask_ratio = consecutive_mask_ratio
@@ -232,14 +246,14 @@ class MaskedAISDataset(AISDataSet):
         self.mask_token = mask_token
         self.min_masks = min_masks
         self.pad_token = pad_token
-        
+
         # Validate probabilities
         probs = [random_mask_prob, consecutive_mask_prob, end_mask_prob]
         if not all(p >= 0 for p in probs):
             raise ValueError("All probabilities must be non-negative")
         if not np.isclose(sum(probs), 1.0):
             raise ValueError("Probabilities must sum to 1")
-            
+
         self.strategy_probs = probs
 
     def _create_random_masks(self, seq_len: int) -> np.ndarray:
@@ -255,21 +269,21 @@ class MaskedAISDataset(AISDataSet):
         n_masks = max(self.min_masks, int(seq_len * self.consecutive_mask_ratio))
         mask = np.zeros(seq_len, dtype=bool)
         start_idx = random.randint(0, seq_len - n_masks)
-        mask[start_idx:start_idx + n_masks] = True
+        mask[start_idx : start_idx + n_masks] = True
         return mask
 
     def _create_end_masks(self, seq_len: int) -> np.ndarray:
         """Create masks for the final portion of the actual sequence.
-        
+
         For a sequence length of 50 and mask_ratio of 0.2:
         [0 0 0 ... 0 1 1 ... 1]
         |__________|_______|
             40 real    10 masked
         (Padding to fill up max_seq_len will be added later)
-        
+
         Args:
             seq_len: Length of the actual sequence (before padding)
-        
+
         Returns:
             np.ndarray: Boolean mask where True indicates positions to mask
         """
@@ -282,7 +296,7 @@ class MaskedAISDataset(AISDataSet):
         """Create masks using randomly selected strategy."""
         # Choose strategy based on probabilities
         strategy_idx = np.random.choice(3, p=self.strategy_probs)
-        
+
         if strategy_idx == 0:
             return self._create_random_masks(seq_len)
         elif strategy_idx == 1:
@@ -294,20 +308,20 @@ class MaskedAISDataset(AISDataSet):
         """Pad sequence to max_seq_len."""
         pad_length = self.max_seq_len - len(seq)
         if pad_length <= 0:
-            return seq[:self.max_seq_len]
-        
+            return seq[: self.max_seq_len]
+
         pad_shape = (pad_length, seq.shape[1])
         padding = np.full(pad_shape, self.pad_token)
         return np.vstack([seq, padding])
 
     def __getitem__(self, idx):
         """Get a masked trajectory sample.
-        
+
         For example, with:
         - max_seq_len = 100
         - actual sequence length = 50
         - mask_ratio = 0.2
-        
+
         Returns:
             tuple: (masked_input, attention_mask, target) where:
                 masked_input: array (max_seq_len, n_features) with:
@@ -323,29 +337,25 @@ class MaskedAISDataset(AISDataSet):
         """
         # Get original sequence
         seq, _ = super().__getitem__(idx)
-        
+
         if len(seq) > self.max_seq_len:
-            seq = seq[-self.max_seq_len:]
-        
+            seq = seq[-self.max_seq_len :]
+
         # Create mask for actual sequence (before padding)
         orig_len = len(seq)
         mask = self._create_masks(orig_len)
-        
+
         # First pad the original sequence
         padded_seq = self._pad_sequence(seq)
         attention_mask = np.arange(self.max_seq_len) < orig_len
-        
+
         # Apply masking only to the actual sequence portion
         masked_seq = padded_seq.copy()
         expanded_mask = np.tile(mask[:, None], (1, padded_seq.shape[1]))
         padded_expanded_mask = np.zeros((self.max_seq_len, padded_seq.shape[1]), dtype=bool)
         padded_expanded_mask[:orig_len] = expanded_mask
-        
+
         # Apply mask token to masked positions in actual sequence
         masked_seq[padded_expanded_mask] = self.mask_token
-        
-        return (
-            masked_seq.astype(np.float32),
-            attention_mask,
-            padded_seq.astype(np.float32)
-        )
+
+        return (masked_seq.astype(np.float32), attention_mask, padded_seq.astype(np.float32))
