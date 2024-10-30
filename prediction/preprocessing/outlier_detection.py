@@ -59,7 +59,7 @@ def _partition(
     sogs: list[float] | np.ndarray,
     threshold_partition_sog: float = 5.0,
     threshold_partition_distance: float = 50.0,
-) -> dict[str, list[np.ndarray | list[datetime] | list[float]]]:
+) -> dict[str, list[np.ndarray | list[datetime] | list[float] | list[int]]]:
     """This function partitions a track into subtracks based on the speed over ground (SOG) values.
 
     The partitioning is done by comparing the calculated speed between two points with the given SOG value.
@@ -93,9 +93,9 @@ def _partition(
             breakpts.append(i)
 
     if len(breakpts) == 1:
-        return {"tracks": [track], "timestamps": [timestamps], "sogs": [sogs]}
+        return {"tracks": [track], "timestamps": [timestamps], "sogs": [sogs], "indices": [list(range(len(track)))]}
 
-    subtracks: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": []}
+    subtracks: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": [], "indices": []}
     for i in range(len(breakpts)):
         if i == len(breakpts) - 1:
             # For the last breakpoint, take all remaining points
@@ -109,6 +109,7 @@ def _partition(
             subtracks["tracks"].append(track[start:end])
             subtracks["timestamps"].append(timestamps[start:end])
             subtracks["sogs"].append(sogs[start:end])
+            subtracks["indices"].append(list(range(start, end)))
 
     assert len(subtracks["tracks"]) == len(subtracks["timestamps"]) == len(subtracks["sogs"])
 

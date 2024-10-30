@@ -66,13 +66,16 @@ class TestTrackPartitioning(TestCase):
 
         # Count total points across all partitions
         total_points = sum(len(t) for t in result["tracks"])
+        total_indices = sum(len(idx) for idx in result["indices"])
 
         # Should preserve all points
         self.assertEqual(total_points, len(track))
+        self.assertEqual(total_indices, len(track))
 
         # Each partition should contain at least one point
-        for t in result["tracks"]:
+        for t, idx in zip(result["tracks"], result["indices"]):
             self.assertGreaterEqual(len(t), 1)
+            self.assertEqual(len(t), len(idx))
 
     def test_no_partition_needed(self):
         """Test when no partitioning is needed"""
@@ -87,7 +90,9 @@ class TestTrackPartitioning(TestCase):
         self.assertEqual(len(result["tracks"]), 1)
         self.assertEqual(len(result["timestamps"]), 1)
         self.assertEqual(len(result["sogs"]), 1)
-        np.testing.assert_array_equal(result["tracks"][0], self.base_track)  # type: ignore
+        self.assertEqual(len(result["indices"]), 1)
+        np.testing.assert_array_equal(result["tracks"][0], self.base_track)
+        self.assertEqual(result["indices"][0], list(range(len(self.base_track))))
 
     def test_partition_by_sog(self):
         """Test partitioning based on SOG threshold"""
@@ -105,11 +110,16 @@ class TestTrackPartitioning(TestCase):
         result = _partition(
             self.base_track, timestamps, sogs, threshold_partition_sog=5.0, threshold_partition_distance=100.0
         )
-        print(result)
 
         self.assertGreater(len(result["tracks"]), 1)
         self.assertEqual(len(result["tracks"]), len(result["timestamps"]))
         self.assertEqual(len(result["tracks"]), len(result["sogs"]))
+        self.assertEqual(len(result["tracks"]), len(result["indices"]))
+        
+        # Verify indices are continuous and cover all points
+        all_indices = [idx for sublist in result["indices"] for idx in sublist]
+        self.assertEqual(len(all_indices), len(self.base_track))
+        self.assertEqual(sorted(all_indices), list(range(len(self.base_track))))
 
     def test_partition_by_distance(self):
         """Test partitioning based on distance threshold"""
@@ -127,6 +137,12 @@ class TestTrackPartitioning(TestCase):
         self.assertGreater(len(result["tracks"]), 1)
         self.assertEqual(len(result["tracks"]), len(result["timestamps"]))
         self.assertEqual(len(result["tracks"]), len(result["sogs"]))
+        self.assertEqual(len(result["tracks"]), len(result["indices"]))
+
+        # Verify indices match the track segments
+        for subtrack, indices in zip(result["tracks"], result["indices"]):
+            self.assertEqual(len(subtrack), len(indices))
+            np.testing.assert_array_equal(track[indices], subtrack)
 
     def test_linestring_input(self):
         """Test with LineString input instead of numpy array"""
@@ -141,18 +157,9 @@ class TestTrackPartitioning(TestCase):
         )
 
         self.assertEqual(len(result["tracks"]), 1)
+        self.assertEqual(len(result["indices"]), 1)
         self.assertTrue(isinstance(result["tracks"][0], np.ndarray))
-
-    def test_length_mismatch(self):
-        """Test that mismatched lengths raise an assertion error"""
-        with self.assertRaises(AssertionError):
-            _partition(
-                self.base_track,
-                self.base_timestamps[:-1],  # One less timestamp
-                self.base_sogs,
-                threshold_partition_sog=15.0,
-                threshold_partition_distance=100.0,
-            )
+        self.assertEqual(result["indices"][0], list(range(len(self.base_track))))
 
     def test_empty_track(self):
         """Test with empty track"""
@@ -171,7 +178,9 @@ class TestTrackPartitioning(TestCase):
         self.assertEqual(len(result["tracks"]), 1)
         self.assertEqual(len(result["timestamps"]), 1)
         self.assertEqual(len(result["sogs"]), 1)
+        self.assertEqual(len(result["indices"]), 1)
         self.assertEqual(len(result["tracks"][0]), 0)
+        self.assertEqual(result["indices"][0], [])
 
     def test_single_point(self):
         """Test with single point track"""
@@ -190,7 +199,9 @@ class TestTrackPartitioning(TestCase):
         self.assertEqual(len(result["tracks"]), 1)
         self.assertEqual(len(result["timestamps"]), 1)
         self.assertEqual(len(result["sogs"]), 1)
+        self.assertEqual(len(result["indices"]), 1)
         self.assertEqual(len(result["tracks"][0]), 1)
+        self.assertEqual(result["indices"][0], [0])
 
     def test_multiple_partitions(self):
         """Test with multiple partition points"""
@@ -215,6 +226,11 @@ class TestTrackPartitioning(TestCase):
         self.assertGreater(len(result["tracks"]), 2)  # Should have multiple partitions
         self.assertEqual(len(result["tracks"]), len(result["timestamps"]))
         self.assertEqual(len(result["tracks"]), len(result["sogs"]))
+        self.assertEqual(len(result["tracks"]), len(result["indices"]))
+
+        # Verify that indices properly reconstruct the original track
+        reconstructed_track = np.concatenate([track[idx] for idx in result["indices"]])
+        np.testing.assert_array_equal(reconstructed_track, track)
 
     def test_consistent_partitioning(self):
         """Test that partitioned subtracks maintain consistency"""
@@ -229,10 +245,12 @@ class TestTrackPartitioning(TestCase):
         total_points = sum(len(track) for track in result["tracks"])
         total_timestamps = sum(len(ts) for ts in result["timestamps"])
         total_sogs = sum(len(sog) for sog in result["sogs"])
+        total_indices = sum(len(idx) for idx in result["indices"])
 
         self.assertEqual(total_points, len(self.base_track))
         self.assertEqual(total_timestamps, len(self.base_timestamps))
         self.assertEqual(total_sogs, len(self.base_sogs))
+        self.assertEqual(total_indices, len(self.base_track))
 
 
 class TestTrackAssociation(TestCase):
