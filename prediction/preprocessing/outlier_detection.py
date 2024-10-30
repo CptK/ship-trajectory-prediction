@@ -28,6 +28,7 @@ class BoatType(TypedDict):
     track: np.ndarray
     timestamps: list[datetime]
     sogs: list[float]
+    indices: list[int]
 
 
 def validate_df(df: pd.DataFrame) -> None:
@@ -93,7 +94,12 @@ def _partition(
             breakpts.append(i)
 
     if len(breakpts) == 1:
-        return {"tracks": [track], "timestamps": [timestamps], "sogs": [sogs], "indices": [list(range(len(track)))]}
+        return {
+            "tracks": [track],
+            "timestamps": [timestamps],
+            "sogs": [sogs],
+            "indices": [list(range(len(track)))],
+        }
 
     subtracks: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": [], "indices": []}
     for i in range(len(breakpts)):
@@ -117,7 +123,7 @@ def _partition(
 
 
 def _association(
-    subtracks: dict[str, list[np.ndarray | list[datetime] | list[float], list[int]]],
+    subtracks: dict[str, list[np.ndarray | list[datetime] | list[float] | list[int]]],
     threshold_association_sog: float = 15.0,
     threshold_association_distance: float = 50.0,
     threshold_completeness: int = 100,
@@ -155,7 +161,12 @@ def _association(
         current_times = all_timestamps.pop(0)
         current_sogs = all_sogs.pop(0)
         current_indices = all_indices.pop(0)
-        boat: BoatType = {"track": current_track, "timestamps": current_times, "sogs": current_sogs, "indices": current_indices}
+        boat: BoatType = {
+            "track": current_track,
+            "timestamps": current_times,
+            "sogs": current_sogs,
+            "indices": current_indices,
+        }
         del_indices = []
         for i in range(len(all_tracks)):
             track, timestamps, sogs = all_tracks[i], all_timestamps[i], all_sogs[i]

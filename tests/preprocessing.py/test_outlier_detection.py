@@ -1,5 +1,6 @@
 import time
 from datetime import datetime, timedelta
+from typing import cast
 from unittest import TestCase
 
 import numpy as np
@@ -91,7 +92,7 @@ class TestTrackPartitioning(TestCase):
         self.assertEqual(len(result["timestamps"]), 1)
         self.assertEqual(len(result["sogs"]), 1)
         self.assertEqual(len(result["indices"]), 1)
-        np.testing.assert_array_equal(result["tracks"][0], self.base_track)
+        np.testing.assert_array_equal(cast(np.ndarray, result["tracks"][0]), self.base_track)
         self.assertEqual(result["indices"][0], list(range(len(self.base_track))))
 
     def test_partition_by_sog(self):
@@ -115,7 +116,7 @@ class TestTrackPartitioning(TestCase):
         self.assertEqual(len(result["tracks"]), len(result["timestamps"]))
         self.assertEqual(len(result["tracks"]), len(result["sogs"]))
         self.assertEqual(len(result["tracks"]), len(result["indices"]))
-        
+
         # Verify indices are continuous and cover all points
         all_indices = [idx for sublist in result["indices"] for idx in sublist]
         self.assertEqual(len(all_indices), len(self.base_track))
@@ -142,7 +143,7 @@ class TestTrackPartitioning(TestCase):
         # Verify indices match the track segments
         for subtrack, indices in zip(result["tracks"], result["indices"]):
             self.assertEqual(len(subtrack), len(indices))
-            np.testing.assert_array_equal(track[indices], subtrack)
+            np.testing.assert_array_equal(track[indices], subtrack)  # type: ignore
 
     def test_linestring_input(self):
         """Test with LineString input instead of numpy array"""
@@ -229,7 +230,7 @@ class TestTrackPartitioning(TestCase):
         self.assertEqual(len(result["tracks"]), len(result["indices"]))
 
         # Verify that indices properly reconstruct the original track
-        reconstructed_track = np.concatenate([track[idx] for idx in result["indices"]])
+        reconstructed_track = np.concatenate([track[idx] for idx in result["indices"]])  # type: ignore
         np.testing.assert_array_equal(reconstructed_track, track)
 
     def test_consistent_partitioning(self):
@@ -358,7 +359,9 @@ class TestTrackAssociation(TestCase):
         self.assertEqual(len(result["tracks"]), 1)  # All should be joined
         self.assertEqual(len(result["tracks"][0]), 6)  # Should contain all points
         self.assertEqual(len(result["indices"]), 1)
-        self.assertEqual(result["indices"][0], list(range(6)))  # Should have continuous indices for all points
+        self.assertEqual(
+            result["indices"][0], list(range(6))
+        )  # Should have continuous indices for all points
 
     def test_completeness_threshold(self):
         """Test that tracks shorter than completeness threshold are filtered out"""
@@ -430,10 +433,10 @@ class TestTrackAssociation(TestCase):
         ]
 
         subtracks = self.create_subtracks(tracks_data)
-        
+
         # Manually alter indices to ensure they're properly handled
         subtracks["indices"] = [[10, 11], [12, 13]]  # Non-sequential indices
-        
+
         result = _association(subtracks, threshold_completeness=2)
 
         # Check that indices are preserved in order
@@ -460,32 +463,32 @@ class TestRemoveOutliersRow(TestCase):
         self.base_cogs = [45.0, 45.0, 45.0, 45.0]
 
         # Create a base row with additional columns
-        self.base_row = pd.Series({
-            "geometry": self.base_track,
-            "timestamps": self.base_timestamps,
-            "velocities": self.base_sogs,
-            "source": self.base_sources,
-            "mmsi": self.base_mmsi,
-            "cog": self.base_cogs
-        })
+        self.base_row = pd.Series(
+            {
+                "geometry": self.base_track,
+                "timestamps": self.base_timestamps,
+                "velocities": self.base_sogs,
+                "source": self.base_sources,
+                "mmsi": self.base_mmsi,
+                "cog": self.base_cogs,
+            }
+        )
 
     def test_normal_track_with_additional_columns(self):
         """Test processing of a normal track with additional columns"""
         result = _remove_outliers_row(
-            self.base_row,
-            threshold_completeness=4,
-            additional_filter_columns=["source", "mmsi", "cog"]
+            self.base_row, threshold_completeness=4, additional_filter_columns=["source", "mmsi", "cog"]
         )
 
         self.assertEqual(len(result), 1)  # Should return single processed track
         processed_row = result[0]
-        
+
         # Check all lists have same length
         self.assertEqual(len(processed_row["timestamps"]), 4)
         self.assertEqual(len(processed_row["source"]), 4)
         self.assertEqual(len(processed_row["mmsi"]), 4)
         self.assertEqual(len(processed_row["cog"]), 4)
-        
+
         # Check additional columns maintain their values
         self.assertEqual(processed_row["source"], self.base_sources)
         self.assertEqual(processed_row["mmsi"], self.base_mmsi)
@@ -503,19 +506,21 @@ class TestRemoveOutliersRow(TestCase):
         sources = ["AIS", "SAT", "AIS", "SAT"]
         mmsi = [123456789, 123456789, 123456789, 123456789]
 
-        row = pd.Series({
-            "geometry": track,
-            "timestamps": timestamps,
-            "velocities": [10.0] * 4,
-            "source": sources,
-            "mmsi": mmsi
-        })
+        row = pd.Series(
+            {
+                "geometry": track,
+                "timestamps": timestamps,
+                "velocities": [10.0] * 4,
+                "source": sources,
+                "mmsi": mmsi,
+            }
+        )
 
         result = _remove_outliers_row(
             row,
             threshold_partition_sog=5.0,
             threshold_completeness=2,
-            additional_filter_columns=["source", "mmsi"]
+            additional_filter_columns=["source", "mmsi"],
         )
 
         # Check each segment maintains corresponding additional column data
@@ -531,39 +536,43 @@ class TestRemoveOutliersRow(TestCase):
 
     def test_multiple_segments_additional_columns(self):
         """Test processing of a track split into multiple segments with additional columns"""
-        track = LineString([
-            [0, 0], [0, 0.1],  # Segment 1
-            [0, 1.0], [0, 1.1],  # Segment 2
-            [0, 2.0], [0, 2.1],  # Segment 3
-        ])
-        
-        timestamps = [
-            self.base_time + timedelta(hours=i) for i in range(6)
-        ]
-        
+        track = LineString(
+            [
+                [0, 0],
+                [0, 0.1],  # Segment 1
+                [0, 1.0],
+                [0, 1.1],  # Segment 2
+                [0, 2.0],
+                [0, 2.1],  # Segment 3
+            ]
+        )
+
+        timestamps = [self.base_time + timedelta(hours=i) for i in range(6)]
+
         sources = ["AIS", "SAT", "AIS", "SAT", "AIS", "SAT"]
         mmsi = [123456789] * 6
         cogs = [45.0, 45.0, 45.0, 45.0, 45.0, 45.0]
 
-        row = pd.Series({
-            "geometry": track,
-            "timestamps": timestamps,
-            "velocities": [10.0] * 6,
-            "source": sources,
-            "mmsi": mmsi,
-            "cog": cogs
-        })
+        row = pd.Series(
+            {
+                "geometry": track,
+                "timestamps": timestamps,
+                "velocities": [10.0] * 6,
+                "source": sources,
+                "mmsi": mmsi,
+                "cog": cogs,
+            }
+        )
 
         result = _remove_outliers_row(
             row,
             threshold_partition_distance=50.0,
             threshold_completeness=2,
-            additional_filter_columns=["source", "mmsi", "cog"]
+            additional_filter_columns=["source", "mmsi", "cog"],
         )
 
-        total_points = sum(len(list(r["geometry"].coords)) for r in result)
         self.assertGreater(len(result), 1)  # Should have multiple segments
-        
+
         # Check that we haven't lost any valid data
         for processed_row in result:
             coords = list(processed_row["geometry"].coords)
@@ -573,11 +582,7 @@ class TestRemoveOutliersRow(TestCase):
 
     def test_empty_additional_columns(self):
         """Test that function works correctly when no additional columns are specified"""
-        result = _remove_outliers_row(
-            self.base_row,
-            threshold_completeness=4,
-            additional_filter_columns=[]
-        )
+        result = _remove_outliers_row(self.base_row, threshold_completeness=4, additional_filter_columns=[])
 
         self.assertEqual(len(result), 1)
         # Check that original columns are preserved
@@ -589,9 +594,7 @@ class TestRemoveOutliersRow(TestCase):
         """Test handling of non-existent additional column"""
         with self.assertRaises(KeyError):
             _remove_outliers_row(
-                self.base_row,
-                threshold_completeness=4,
-                additional_filter_columns=["nonexistent_column"]
+                self.base_row, threshold_completeness=4, additional_filter_columns=["nonexistent_column"]
             )
 
     def test_additional_columns_consistency(self):
@@ -606,7 +609,7 @@ class TestRemoveOutliersRow(TestCase):
             row,
             threshold_partition_distance=50.0,
             threshold_completeness=2,
-            additional_filter_columns=["quality"]
+            additional_filter_columns=["quality"],
         )
 
         for processed_row in result:
@@ -641,13 +644,15 @@ class TestRemoveOutliersChunk(TestCase):
             self.base_time + timedelta(hours=3),
         ]
         self.base_sogs = [10.0, 10.0, 10.0, 10.0]
-        
+
         # Create additional column data
         self.base_sources = ["AIS", "AIS", "AIS", "AIS"]
         self.base_mmsi = [123456789, 123456789, 123456789, 123456789]
         self.base_cogs = [45.0, 45.0, 45.0, 45.0]
 
-    def create_test_chunk(self, num_rows: int, include_outliers: bool = False, include_additional: bool = False) -> pd.DataFrame:
+    def create_test_chunk(
+        self, num_rows: int, include_outliers: bool = False, include_additional: bool = False
+    ) -> pd.DataFrame:
         """Helper function to create a test DataFrame chunk"""
         rows = []
         for i in range(num_rows):
@@ -664,13 +669,15 @@ class TestRemoveOutliersChunk(TestCase):
                 "velocities": [10.0] * 4,
                 "vessel_id": f"VESSEL_{i}",
             }
-            
+
             if include_additional:
-                row_data.update({
-                    "source": self.base_sources.copy(),
-                    "mmsi": self.base_mmsi.copy(),
-                    "cog": self.base_cogs.copy()
-                })
+                row_data.update(
+                    {
+                        "source": self.base_sources.copy(),
+                        "mmsi": self.base_mmsi.copy(),
+                        "cog": self.base_cogs.copy(),
+                    }
+                )
 
             row = pd.Series(row_data)
             rows.append(row)
@@ -680,7 +687,7 @@ class TestRemoveOutliersChunk(TestCase):
     def test_process_empty_chunk(self):
         """Test processing an empty chunk"""
         empty_chunk = pd.DataFrame(columns=["geometry", "timestamps", "velocities"])
-        args = (empty_chunk, self.thresholds, False, [])
+        args: tuple = (empty_chunk, self.thresholds, False, [])
 
         result = _remove_outliers_chunk(args)
 
@@ -695,7 +702,7 @@ class TestRemoveOutliersChunk(TestCase):
             "vessel_id": "VESSEL_1",
             "source": self.base_sources,
             "mmsi": self.base_mmsi,
-            "cog": self.base_cogs
+            "cog": self.base_cogs,
         }
         chunk = pd.DataFrame([row_data])
 
@@ -790,7 +797,7 @@ class TestRemoveOutliersChunk(TestCase):
             "velocities": self.base_sogs,
             "vessel_id": "VESSEL_1",
             "source": self.base_sources,
-            "mmsi": self.base_mmsi
+            "mmsi": self.base_mmsi,
         }
         chunk = pd.DataFrame([row_data, row_data.copy()])
 
@@ -820,13 +827,15 @@ class TestRemoveOutliers(TestCase):
             self.base_time + timedelta(hours=3),
         ]
         self.base_velocities = [10.0, 10.0, 10.0, 10.0]
-        
+
         # Create additional column data
         self.base_sources = ["AIS", "AIS", "AIS", "AIS"]
         self.base_mmsi = [123456789, 123456789, 123456789, 123456789]
         self.base_cogs = [45.0, 45.0, 45.0, 45.0]
 
-    def create_test_df(self, num_rows: int, include_outliers: bool = False, include_additional: bool = False) -> pd.DataFrame:
+    def create_test_df(
+        self, num_rows: int, include_outliers: bool = False, include_additional: bool = False
+    ) -> pd.DataFrame:
         """Helper function to create a test DataFrame"""
         data = []
         for i in range(num_rows):
@@ -861,34 +870,38 @@ class TestRemoveOutliers(TestCase):
                 "vessel_id": f"VESSEL_{i}",
                 "vessel_type": "cargo",
             }
-            
+
             if include_additional:
-                row.update({
-                    "source": self.base_sources.copy(),
-                    "mmsi": self.base_mmsi.copy(),
-                    "cog": self.base_cogs.copy()
-                })
-            
+                row.update(
+                    {
+                        "source": self.base_sources.copy(),
+                        "mmsi": self.base_mmsi.copy(),
+                        "cog": self.base_cogs.copy(),
+                    }
+                )
+
             data.append(row)
 
         return pd.DataFrame(data)
 
     def test_additional_columns_preserved(self):
         """Test that additional filter columns are properly preserved and filtered"""
-        df = pd.DataFrame([{
-            "geometry": self.base_track,
-            "timestamps": self.base_timestamps,
-            "velocities": self.base_velocities,
-            "vessel_id": "VESSEL_1",
-            "source": self.base_sources,
-            "mmsi": self.base_mmsi,
-            "cog": self.base_cogs
-        }])
+        df = pd.DataFrame(
+            [
+                {
+                    "geometry": self.base_track,
+                    "timestamps": self.base_timestamps,
+                    "velocities": self.base_velocities,
+                    "vessel_id": "VESSEL_1",
+                    "source": self.base_sources,
+                    "mmsi": self.base_mmsi,
+                    "cog": self.base_cogs,
+                }
+            ]
+        )
 
         result = remove_outliers(
-            df,
-            threshold_completeness=4,
-            additional_filter_columns=["source", "mmsi", "cog"]
+            df, threshold_completeness=4, additional_filter_columns=["source", "mmsi", "cog"]
         )
 
         self.assertEqual(len(result), 1)
@@ -1115,7 +1128,7 @@ class TestRemoveOutliers(TestCase):
             threshold_association_sog=15.0,
             threshold_association_distance=50.0,
             threshold_completeness=2,
-            additional_filter_columns=["source", "mmsi", "cog"]
+            additional_filter_columns=["source", "mmsi", "cog"],
         )
 
         self.assertGreater(len(result), 0)
@@ -1134,20 +1147,16 @@ class TestRemoveOutliers(TestCase):
     def test_invalid_additional_column(self):
         """Test handling of invalid additional column"""
         df = self.create_test_df(1, include_additional=True)
-        
+
         with self.assertRaises(KeyError):
-            remove_outliers(
-                df,
-                threshold_completeness=4,
-                additional_filter_columns=["nonexistent_column"]
-            )
+            remove_outliers(df, threshold_completeness=4, additional_filter_columns=["nonexistent_column"])
 
     def test_empty_additional_columns(self):
         """Test that function works correctly when no additional columns are specified"""
         df = self.create_test_df(1, include_additional=True)
-        
+
         result = remove_outliers(df, threshold_completeness=4, additional_filter_columns=[])
-        
+
         self.assertEqual(len(result), 1)
         row = result.iloc[0]
         self.assertTrue("source" in row)  # Column should still exist
@@ -1156,7 +1165,7 @@ class TestRemoveOutliers(TestCase):
     def test_large_dataframe_with_additional_columns(self):
         """Test processing of a larger DataFrame with additional columns"""
         df = self.create_test_df(100, include_outliers=True, include_additional=True)
-        
+
         result = remove_outliers(
             df,
             threshold_partition_sog=15.0,
@@ -1187,13 +1196,15 @@ class TestRemoveOutliersParallel(TestCase):
             "threshold_association_distance": 100.0,
             "threshold_completeness": 4,
         }
-        
+
         # Create additional column data
         self.base_sources = ["AIS", "AIS", "AIS", "AIS"]
         self.base_mmsi = [123456789, 123456789, 123456789, 123456789]
         self.base_cogs = [45.0, 45.0, 45.0, 45.0]
 
-    def create_test_df(self, num_rows: int, include_outliers: bool = False, include_additional: bool = False) -> pd.DataFrame:
+    def create_test_df(
+        self, num_rows: int, include_outliers: bool = False, include_additional: bool = False
+    ) -> pd.DataFrame:
         """Helper function to create a test DataFrame with valid coordinates"""
         data = []
         for i in range(num_rows):
@@ -1226,14 +1237,16 @@ class TestRemoveOutliersParallel(TestCase):
                 "vessel_id": f"VESSEL_{i}",
                 "vessel_type": "cargo",
             }
-            
+
             if include_additional:
-                row.update({
-                    "source": self.base_sources.copy(),
-                    "mmsi": self.base_mmsi.copy(),
-                    "cog": self.base_cogs.copy()
-                })
-            
+                row.update(
+                    {
+                        "source": self.base_sources.copy(),
+                        "mmsi": self.base_mmsi.copy(),
+                        "cog": self.base_cogs.copy(),
+                    }
+                )
+
             data.append(row)
 
         return pd.DataFrame(data)
@@ -1245,19 +1258,19 @@ class TestRemoveOutliersParallel(TestCase):
 
         # Process with single process
         single_result = remove_outliers(
-            df, 
-            **self.default_thresholds,
+            df,
+            **self.default_thresholds,  # type: ignore
             verbose=False,
-            additional_filter_columns=additional_columns
+            additional_filter_columns=additional_columns,
         )
 
         # Process with parallel processing
         parallel_result = remove_outliers_parallel(
             df,
-            **self.default_thresholds,
+            **self.default_thresholds,  # type: ignore
             verbose=False,
             n_processes=2,
-            additional_filter_columns=additional_columns
+            additional_filter_columns=additional_columns,
         )
 
         # Compare results
@@ -1284,10 +1297,10 @@ class TestRemoveOutliersParallel(TestCase):
         for n_processes in process_counts:
             results[n_processes] = remove_outliers_parallel(
                 df,
-                **self.default_thresholds,
+                **self.default_thresholds,  # type: ignore
                 verbose=False,
                 n_processes=n_processes,
-                additional_filter_columns=additional_columns
+                additional_filter_columns=additional_columns,
             )
 
         # Results should be the same regardless of process count
@@ -1312,35 +1325,35 @@ class TestRemoveOutliersParallel(TestCase):
             "vessel_id": "VESSEL_1",
             "source": self.base_sources,
             "mmsi": self.base_mmsi,
-            "cog": self.base_cogs
+            "cog": self.base_cogs,
         }
-        
+
         # Create DataFrame with identical consecutive rows
         df = pd.DataFrame([row_data] * 10)
         additional_columns = ["source", "mmsi", "cog"]
 
         result_2_chunks = remove_outliers_parallel(
             df,
-            **self.default_thresholds,
+            **self.default_thresholds,  # type: ignore
             verbose=False,
             n_processes=2,
-            additional_filter_columns=additional_columns
+            additional_filter_columns=additional_columns,
         )
-        
+
         result_3_chunks = remove_outliers_parallel(
             df,
-            **self.default_thresholds,
+            **self.default_thresholds,  # type: ignore
             verbose=False,
             n_processes=3,
-            additional_filter_columns=additional_columns
+            additional_filter_columns=additional_columns,
         )
 
         self.assertEqual(len(result_2_chunks), len(result_3_chunks))
-        
+
         # Compare additional columns across different chunk sizes
         result_2_chunks = result_2_chunks.sort_values("vessel_id").reset_index(drop=True)
         result_3_chunks = result_3_chunks.sort_values("vessel_id").reset_index(drop=True)
-        
+
         for i in range(len(result_2_chunks)):
             for col in additional_columns:
                 self.assertEqual(result_2_chunks.iloc[i][col], result_3_chunks.iloc[i][col])
@@ -1352,10 +1365,10 @@ class TestRemoveOutliersParallel(TestCase):
 
         result = remove_outliers_parallel(
             df,
-            **self.default_thresholds,
+            **self.default_thresholds,  # type: ignore
             verbose=False,
             n_processes=4,
-            additional_filter_columns=additional_columns
+            additional_filter_columns=additional_columns,
         )
 
         # Check that additional columns are properly maintained
@@ -1373,14 +1386,14 @@ class TestRemoveOutliersParallel(TestCase):
     def test_invalid_additional_columns(self):
         """Test handling of invalid additional columns in parallel processing"""
         df = self.create_test_df(10, include_additional=True)
-        
+
         with self.assertRaises(KeyError):
             remove_outliers_parallel(
                 df,
-                **self.default_thresholds,
+                **self.default_thresholds,  # type: ignore
                 verbose=False,
                 n_processes=2,
-                additional_filter_columns=["nonexistent_column"]
+                additional_filter_columns=["nonexistent_column"],
             )
 
     def test_parallel_vs_single_process_results(self):
