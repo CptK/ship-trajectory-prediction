@@ -1,9 +1,10 @@
 from unittest import TestCase
+from numpy.testing import assert_almost_equal
 
 import numpy as np
 import torch
 
-from prediction.preprocessing.utils import calc_sog, haversine, haversine_tensor
+from prediction.preprocessing.utils import calc_sog, haversine, haversine_tensor, dtw_spatial
 
 
 class TestHaversineTensor(TestCase):
@@ -136,6 +137,65 @@ class TestHaversine(TestCase):
         # Earth's circumference is approximately 40,075 km
         # So half of it is 20,037.5 km
         self.assertLess(dist, 20037.5)  # Should be less than half Earth's circumference
+
+
+class TestDTWSpatial(TestCase):
+    def setUp(self):
+        """Create sample trajectories for testing."""
+        # Simple parallel trajectories
+        self.traj1 = np.array([
+            [48.0, -125.0, 10.0, 180.0],  # lat, lon, sog, cog
+            [48.1, -125.0, 10.0, 180.0],
+            [48.2, -125.0, 10.0, 180.0]
+        ])
+        
+        self.traj2 = np.array([
+            [48.0, -125.1, 10.0, 180.0],
+            [48.1, -125.1, 10.0, 180.0],
+            [48.2, -125.1, 10.0, 180.0]
+        ])
+        
+        # Single point trajectories
+        self.single_point1 = np.array([[48.0, -125.0, 10.0, 180.0]])
+        self.single_point2 = np.array([[48.0, -125.1, 10.0, 180.0]])
+        
+        # Different length trajectories
+        self.traj_short = np.array([
+            [48.0, -125.0, 10.0, 180.0],
+            [48.1, -125.0, 10.0, 180.0]
+        ])
+        
+        # Identical trajectories
+        self.traj_identical = np.array([
+            [48.0, -125.0, 10.0, 180.0],
+            [48.1, -125.0, 10.0, 180.0]
+        ])
+
+    def test_parallel_trajectories(self):
+        """Test DTW distance between parallel trajectories."""
+        distance = dtw_spatial(self.traj1, self.traj2)
+        self.assertGreater(distance, 0)  # Should have non-zero distance
+        
+    def test_single_point(self):
+        """Test DTW distance between single point trajectories."""
+        distance = dtw_spatial(self.single_point1, self.single_point2)
+        self.assertGreater(distance, 0)
+        
+    def test_different_lengths(self):
+        """Test DTW handles trajectories of different lengths."""
+        distance = dtw_spatial(self.traj1, self.traj_short)
+        self.assertGreater(distance, 0)
+        
+    def test_identical_trajectories(self):
+        """Test DTW distance between identical trajectories is zero."""
+        distance = dtw_spatial(self.traj_identical, self.traj_identical)
+        assert_almost_equal(distance, 0, decimal=6)
+        
+    def test_symmetry(self):
+        """Test DTW distance is symmetric."""
+        dist1 = dtw_spatial(self.traj1, self.traj2)
+        dist2 = dtw_spatial(self.traj2, self.traj1)
+        assert_almost_equal(dist1, dist2, decimal=6)
 
 
 class TestSpeedOverGround(TestCase):

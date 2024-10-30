@@ -3,6 +3,8 @@ from typing import cast
 import numpy as np
 import torch
 
+from fastdtw.fastdtw import fastdtw
+
 
 def haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """This function calculates the haversine distance between two points given their coordinates.
@@ -79,6 +81,33 @@ def haversine_tensor(
     elif tensor_reduction == "mean":
         distance = distance.mean(dim=0)
 
+    return distance
+
+
+def dtw_spatial(traj1: np.ndarray, traj2: np.ndarray) -> float:
+    """
+    Calculate DTW distance between trajectories based on spatial coordinates.
+    
+    Args:
+        traj1: First trajectory array with shape (n_points, 4) containing:
+              - lat: Latitude in decimal degrees
+              - lon: Longitude in decimal degrees  
+              - sog: Speed over ground in knots
+              - cog: Course over ground in degrees [0, 360)
+        traj2: Second trajectory array with shape (m_points, 4), same format
+            
+    Returns:
+        DTW distance based on Haversine distances between points
+        
+    Example:
+        >>> traj1 = np.array([[48.5, -125.5, 12.5, 180.0],
+        ...                   [48.6, -125.4, 12.3, 182.0]])
+        >>> traj2 = np.array([[48.4, -125.6, 11.5, 178.0],
+        ...                   [48.5, -125.5, 11.8, 179.0]])
+        >>> distance = dtw_spatial(traj1, traj2)
+    """
+    distance, _ = fastdtw(traj1[:, :2], traj2[:, :2], 
+                         dist=lambda x, y: haversine(x[0], x[1], y[0], y[1]))
     return distance
 
 
