@@ -117,7 +117,7 @@ def _partition(
 
 
 def _association(
-    subtracks: dict[str, list[np.ndarray | list[datetime] | list[float]]],
+    subtracks: dict[str, list[np.ndarray | list[datetime] | list[float], list[int]]],
     threshold_association_sog: float = 15.0,
     threshold_association_distance: float = 50.0,
     threshold_completeness: int = 100,
@@ -133,7 +133,7 @@ def _association(
     distance threshold.
 
     Args:
-        subtracks: Dictionary containing subtracks, timestamps, and SOG values
+        subtracks: Dictionary containing subtracks, timestamps, SOG values and indices
         threshold_association_sog: Threshold for associating tracks based on SOG values
         threshold_association_distance: Threshold for associating tracks based on distance between points
                                         in kilometers.
@@ -142,18 +142,20 @@ def _association(
     all_tracks: list[np.ndarray] = cast(list[np.ndarray], subtracks["tracks"])
     all_timestamps: list[list[datetime]] = cast(list[list[datetime]], subtracks["timestamps"])
     all_sogs: list[list[float]] = cast(list[list[float]], subtracks["sogs"])
+    all_indices: list[list[int]] = cast(list[list[int]], subtracks["indices"])
 
     # if there is only one track, return it, if it is long enough
     if len(all_tracks) == 1 and len(all_tracks[0]) >= threshold_completeness:
-        return {"tracks": all_tracks, "timestamps": all_timestamps, "sogs": all_sogs}
+        return {"tracks": all_tracks, "timestamps": all_timestamps, "sogs": all_sogs, "indices": all_indices}
 
-    result: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": []}
+    result: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": [], "indices": []}
 
     while len(all_tracks) > 1:
         current_track = all_tracks.pop(0)
         current_times = all_timestamps.pop(0)
         current_sogs = all_sogs.pop(0)
-        boat: BoatType = {"track": current_track, "timestamps": current_times, "sogs": current_sogs}
+        current_indices = all_indices.pop(0)
+        boat: BoatType = {"track": current_track, "timestamps": current_times, "sogs": current_sogs, "indices": current_indices}
         del_indices = []
         for i in range(len(all_tracks)):
             track, timestamps, sogs = all_tracks[i], all_timestamps[i], all_sogs[i]
@@ -167,17 +169,20 @@ def _association(
                 boat["track"] = np.concatenate((boat["track"], track))
                 boat["timestamps"].extend(timestamps)
                 boat["sogs"].extend(sogs)
+                boat["indices"].extend(all_indices[i])
                 del_indices.append(i)
 
         if len(boat["track"]) >= threshold_completeness:
             result["tracks"].append(boat["track"])
             result["timestamps"].append(boat["timestamps"])
             result["sogs"].append(boat["sogs"])
+            result["indices"].append(boat["indices"])
 
         for i in sorted(del_indices, reverse=True):
             del all_tracks[i]
             del all_timestamps[i]
             del all_sogs[i]
+            del all_indices[i]
 
     return result
 

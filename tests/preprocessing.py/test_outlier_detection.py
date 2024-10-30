@@ -260,18 +260,21 @@ class TestTrackAssociation(TestCase):
 
     def create_subtracks(self, tracks_data) -> dict[str, list]:
         """Helper function to create subtracks dictionary with the given data"""
-        subtracks: dict = {"tracks": [], "timestamps": [], "sogs": []}
+        subtracks: dict = {"tracks": [], "timestamps": [], "sogs": [], "indices": []}
+        current_index = 0
         for track_info in tracks_data:
-            subtracks["tracks"].append(np.array(track_info["points"]))
+            points = track_info["points"]
+            subtracks["tracks"].append(np.array(points))
             subtracks["timestamps"].append(
                 [self.base_time + timedelta(minutes=m) for m in track_info["time_offsets"]]
             )
             subtracks["sogs"].append(track_info["sogs"])
+            subtracks["indices"].append(list(range(current_index, current_index + len(points))))
+            current_index += len(points)
         return subtracks
 
     def test_simple_association(self):
         """Test association of two tracks that should be joined"""
-        # Create tracks that should be associated
         tracks_data = [
             {
                 "points": [[0, 0], [0, 0.02], [0, 0.04], [0, 0.06]],  # First track
@@ -300,6 +303,9 @@ class TestTrackAssociation(TestCase):
 
         self.assertEqual(len(result["tracks"]), 1)  # Should be joined into one track
         self.assertEqual(len(result["tracks"][0]), 12)  # Should contain all points
+        self.assertEqual(len(result["indices"]), 1)  # Should have one set of indices
+        self.assertEqual(len(result["indices"][0]), 12)  # Should have indices for all points
+        self.assertEqual(result["indices"][0], list(range(12)))  # Should have continuous indices
 
     def test_no_association_high_speed(self):
         """Test tracks that shouldn't be associated due to high speed between them"""
@@ -321,6 +327,8 @@ class TestTrackAssociation(TestCase):
         )
 
         self.assertEqual(len(result["tracks"]), 1)  # Only one track should meet completeness
+        self.assertEqual(len(result["indices"]), 1)
+        self.assertEqual(result["indices"][0], [0, 1])  # Should only contain indices of first track
 
     def test_no_association_large_distance(self):
         """Test tracks that shouldn't be associated due to large distance"""
@@ -333,6 +341,8 @@ class TestTrackAssociation(TestCase):
         result = _association(subtracks, threshold_completeness=2)
 
         self.assertEqual(len(result["tracks"]), 1)  # Only one track should meet completeness
+        self.assertEqual(len(result["indices"]), 1)
+        self.assertEqual(result["indices"][0], [0, 1])  # Should only contain indices of first track
 
     def test_multiple_associations(self):
         """Test associating multiple tracks in sequence"""
@@ -347,6 +357,8 @@ class TestTrackAssociation(TestCase):
 
         self.assertEqual(len(result["tracks"]), 1)  # All should be joined
         self.assertEqual(len(result["tracks"][0]), 6)  # Should contain all points
+        self.assertEqual(len(result["indices"]), 1)
+        self.assertEqual(result["indices"][0], list(range(6)))  # Should have continuous indices for all points
 
     def test_completeness_threshold(self):
         """Test that tracks shorter than completeness threshold are filtered out"""
@@ -358,15 +370,17 @@ class TestTrackAssociation(TestCase):
         result = _association(subtracks, threshold_completeness=3)  # Require at least 3 points
 
         self.assertEqual(len(result["tracks"]), 0)  # Too short, should be filtered out
+        self.assertEqual(len(result["indices"]), 0)  # No indices for filtered tracks
 
     def test_empty_input(self):
         """Test handling of empty input"""
-        empty_subtracks: dict = {"tracks": [], "timestamps": [], "sogs": []}
+        empty_subtracks: dict = {"tracks": [], "timestamps": [], "sogs": [], "indices": []}
         result = _association(empty_subtracks)
 
         self.assertEqual(len(result["tracks"]), 0)
         self.assertEqual(len(result["timestamps"]), 0)
         self.assertEqual(len(result["sogs"]), 0)
+        self.assertEqual(len(result["indices"]), 0)
 
     def test_single_track_input(self):
         """Test handling of single track input"""
@@ -379,6 +393,8 @@ class TestTrackAssociation(TestCase):
 
         # Should keep the track if it meets completeness threshold
         self.assertEqual(len(result["tracks"]), 1)
+        self.assertEqual(len(result["indices"]), 1)
+        self.assertEqual(result["indices"][0], [0, 1, 2])  # Should maintain original indices
 
     def test_consistency_of_associated_data(self):
         """Test that associated tracks maintain data consistency"""
@@ -393,6 +409,10 @@ class TestTrackAssociation(TestCase):
         # Check that all arrays have matching lengths
         self.assertEqual(len(result["tracks"][0]), len(result["timestamps"][0]))
         self.assertEqual(len(result["tracks"][0]), len(result["sogs"][0]))
+        self.assertEqual(len(result["tracks"][0]), len(result["indices"][0]))
+
+        # Check indices are continuous and match the number of points
+        self.assertEqual(result["indices"][0], list(range(4)))
 
         # Check time ordering
         timestamps = result["timestamps"][0]
@@ -401,6 +421,23 @@ class TestTrackAssociation(TestCase):
         # Check coordinate continuity
         track = result["tracks"][0]
         self.assertTrue(all(abs(track[i + 1][1] - track[i][1]) < 0.5 for i in range(len(track) - 1)))
+
+    def test_association_indices_ordering(self):
+        """Test that indices maintain proper ordering after association"""
+        tracks_data = [
+            {"points": [[0, 0], [0, 0.1]], "time_offsets": [0, 60], "sogs": [10.0, 10.0]},
+            {"points": [[0, 0.15], [0, 0.2]], "time_offsets": [120, 180], "sogs": [10.0, 10.0]},
+        ]
+
+        subtracks = self.create_subtracks(tracks_data)
+        
+        # Manually alter indices to ensure they're properly handled
+        subtracks["indices"] = [[10, 11], [12, 13]]  # Non-sequential indices
+        
+        result = _association(subtracks, threshold_completeness=2)
+
+        # Check that indices are preserved in order
+        self.assertEqual(result["indices"][0], [10, 11, 12, 13])
 
 
 class TestRemoveOutliersRow(TestCase):
