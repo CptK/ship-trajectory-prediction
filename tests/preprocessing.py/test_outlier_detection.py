@@ -641,8 +641,13 @@ class TestRemoveOutliersChunk(TestCase):
             self.base_time + timedelta(hours=3),
         ]
         self.base_sogs = [10.0, 10.0, 10.0, 10.0]
+        
+        # Create additional column data
+        self.base_sources = ["AIS", "AIS", "AIS", "AIS"]
+        self.base_mmsi = [123456789, 123456789, 123456789, 123456789]
+        self.base_cogs = [45.0, 45.0, 45.0, 45.0]
 
-    def create_test_chunk(self, num_rows: int, include_outliers: bool = False) -> pd.DataFrame:
+    def create_test_chunk(self, num_rows: int, include_outliers: bool = False, include_additional: bool = False) -> pd.DataFrame:
         """Helper function to create a test DataFrame chunk"""
         rows = []
         for i in range(num_rows):
@@ -653,15 +658,21 @@ class TestRemoveOutliersChunk(TestCase):
                 # Create normal track
                 track = LineString([[0, i], [0, i + 0.1], [0, i + 0.2], [0, i + 0.3]])
 
-            row = pd.Series(
-                {
-                    "geometry": track,
-                    "timestamps": [self.base_time + timedelta(hours=j) for j in range(4)],
-                    "velocities": [10.0] * 4,
-                    "vessel_id": f"VESSEL_{i}",
-                    "orientations": [0.0] * 4,
-                }
-            )
+            row_data = {
+                "geometry": track,
+                "timestamps": [self.base_time + timedelta(hours=j) for j in range(4)],
+                "velocities": [10.0] * 4,
+                "vessel_id": f"VESSEL_{i}",
+            }
+            
+            if include_additional:
+                row_data.update({
+                    "source": self.base_sources.copy(),
+                    "mmsi": self.base_mmsi.copy(),
+                    "cog": self.base_cogs.copy()
+                })
+
+            row = pd.Series(row_data)
             rows.append(row)
 
         return pd.DataFrame(rows)
@@ -669,37 +680,39 @@ class TestRemoveOutliersChunk(TestCase):
     def test_process_empty_chunk(self):
         """Test processing an empty chunk"""
         empty_chunk = pd.DataFrame(columns=["geometry", "timestamps", "velocities"])
-        args = (empty_chunk, self.thresholds, False)
+        args = (empty_chunk, self.thresholds, False, [])
 
         result = _remove_outliers_chunk(args)
 
         self.assertEqual(len(result), 0)
 
-    def test_process_single_row_chunk(self):
-        """Test processing a chunk with a single row"""
-        chunk = pd.DataFrame(
-            [
-                {
-                    "geometry": self.base_track,
-                    "timestamps": self.base_timestamps,
-                    "velocities": self.base_sogs,
-                    "vessel_id": "VESSEL_1",
-                    "orientations": [0.0] * 4,
-                }
-            ]
-        )
+    def test_process_single_row_chunk_with_additional_columns(self):
+        """Test processing a chunk with a single row and additional columns"""
+        row_data = {
+            "geometry": self.base_track,
+            "timestamps": self.base_timestamps,
+            "velocities": self.base_sogs,
+            "vessel_id": "VESSEL_1",
+            "source": self.base_sources,
+            "mmsi": self.base_mmsi,
+            "cog": self.base_cogs
+        }
+        chunk = pd.DataFrame([row_data])
 
-        args = (chunk, self.thresholds, False)
+        args = (chunk, self.thresholds, False, ["source", "mmsi", "cog"])
         result = _remove_outliers_chunk(args)
 
         self.assertGreater(len(result), 0)
         self.assertTrue(isinstance(result[0]["geometry"], LineString))
         self.assertEqual(result[0]["vessel_id"], "VESSEL_1")
+        self.assertEqual(len(result[0]["source"]), 4)
+        self.assertEqual(len(result[0]["mmsi"]), 4)
+        self.assertEqual(len(result[0]["cog"]), 4)
 
-    def test_process_multiple_rows(self):
-        """Test processing multiple rows without outliers"""
-        chunk = self.create_test_chunk(5, include_outliers=False)
-        args = (chunk, self.thresholds, False)
+    def test_process_multiple_rows_with_additional_columns(self):
+        """Test processing multiple rows with additional columns"""
+        chunk = self.create_test_chunk(5, include_outliers=False, include_additional=True)
+        args = (chunk, self.thresholds, False, ["source", "mmsi", "cog"])
 
         result = _remove_outliers_chunk(args)
 
@@ -708,33 +721,48 @@ class TestRemoveOutliersChunk(TestCase):
             self.assertEqual(len(list(row["geometry"].coords)), 4)
             self.assertEqual(len(row["timestamps"]), 4)
             self.assertEqual(len(row["velocities"]), 4)
+            self.assertEqual(len(row["source"]), 4)
+            self.assertEqual(len(row["mmsi"]), 4)
+            self.assertEqual(len(row["cog"]), 4)
+            # Verify content of additional columns
+            self.assertEqual(row["source"], self.base_sources)
+            self.assertEqual(row["mmsi"], self.base_mmsi)
+            self.assertEqual(row["cog"], self.base_cogs)
 
-    def test_process_rows_with_outliers(self):
-        """Test processing rows containing outliers"""
-        chunk = self.create_test_chunk(4, include_outliers=True)
-        args = (chunk, self.thresholds, False)
+    def test_process_rows_with_outliers_and_additional_columns(self):
+        """Test processing rows containing outliers with additional columns"""
+        chunk = self.create_test_chunk(4, include_outliers=True, include_additional=True)
+        args = (chunk, self.thresholds, False, ["source", "mmsi", "cog"])
 
         result = _remove_outliers_chunk(args)
 
         # Should have more rows than input due to splitting of tracks with outliers
         self.assertGreater(len(result), 0)
 
-        # Check that all resulting rows are valid
+        # Check that all resulting rows are valid and additional columns are properly split
         for row in result:
             coords = list(row["geometry"].coords)
             self.assertEqual(len(coords), len(row["timestamps"]))
             self.assertEqual(len(coords), len(row["velocities"]))
+            self.assertEqual(len(coords), len(row["source"]))
+            self.assertEqual(len(coords), len(row["mmsi"]))
+            self.assertEqual(len(coords), len(row["cog"]))
+            # Verify all values in additional columns are from original data
+            self.assertTrue(all(s in self.base_sources for s in row["source"]))
+            self.assertTrue(all(m in self.base_mmsi for m in row["mmsi"]))
+            self.assertTrue(all(c in self.base_cogs for c in row["cog"]))
 
-    def test_verbose_mode(self):
-        """Test that verbose mode doesn't affect results"""
-        chunk = self.create_test_chunk(3)
+    def test_verbose_mode_with_additional_columns(self):
+        """Test that verbose mode doesn't affect results with additional columns"""
+        chunk = self.create_test_chunk(3, include_additional=True)
+        additional_columns = ["source", "mmsi", "cog"]
 
         # Process with verbose=False
-        args_non_verbose = (chunk, self.thresholds, False)
+        args_non_verbose = (chunk, self.thresholds, False, additional_columns)
         result_non_verbose = _remove_outliers_chunk(args_non_verbose)
 
         # Process with verbose=True
-        args_verbose = (chunk, self.thresholds, True)
+        args_verbose = (chunk, self.thresholds, True, additional_columns)
         result_verbose = _remove_outliers_chunk(args_verbose)
 
         # Results should be identical
@@ -743,47 +771,30 @@ class TestRemoveOutliersChunk(TestCase):
             self.assertTrue(row1["geometry"].equals(row2["geometry"]))
             self.assertEqual(row1["timestamps"], row2["timestamps"])
             self.assertEqual(row1["velocities"], row2["velocities"])
+            for col in additional_columns:
+                self.assertEqual(row1[col], row2[col])
 
-    def test_preserve_additional_fields(self):
-        """Test that additional fields are preserved in output"""
-        chunk = pd.DataFrame(
-            [
-                {
-                    "geometry": self.base_track,
-                    "timestamps": self.base_timestamps,
-                    "velocities": self.base_sogs,
-                    "vessel_id": "VESSEL_1",
-                    "vessel_type": "cargo",
-                    "flag": "ABC",
-                    "orientations": [0.0] * 4,
-                }
-            ]
-        )
+    def test_invalid_additional_columns(self):
+        """Test handling of invalid additional columns"""
+        chunk = self.create_test_chunk(2, include_additional=True)
+        args = (chunk, self.thresholds, False, ["nonexistent_column"])
 
-        args = (chunk, self.thresholds, False)
-        result = _remove_outliers_chunk(args)
+        with self.assertRaises(KeyError):
+            _remove_outliers_chunk(args)
 
-        self.assertGreater(len(result), 0)
-        for row in result:
-            self.assertEqual(row["vessel_id"], "VESSEL_1")
-            self.assertEqual(row["vessel_type"], "cargo")
-            self.assertEqual(row["flag"], "ABC")
+    def test_row_independence_with_additional_columns(self):
+        """Test that each row is processed independently with additional columns"""
+        row_data = {
+            "geometry": self.base_track,
+            "timestamps": self.base_timestamps,
+            "velocities": self.base_sogs,
+            "vessel_id": "VESSEL_1",
+            "source": self.base_sources,
+            "mmsi": self.base_mmsi
+        }
+        chunk = pd.DataFrame([row_data, row_data.copy()])
 
-    def test_row_independence(self):
-        """Test that each row is processed independently"""
-        # Create two identical rows
-        row = pd.Series(
-            {
-                "geometry": self.base_track,
-                "timestamps": self.base_timestamps,
-                "velocities": self.base_sogs,
-                "vessel_id": "VESSEL_1",
-                "orientations": [0.0] * 4,
-            }
-        )
-        chunk = pd.DataFrame([row, row.copy()])
-
-        args = (chunk, self.thresholds, False)
+        args = (chunk, self.thresholds, False, ["source", "mmsi"])
         result = _remove_outliers_chunk(args)
 
         # Results for identical rows should be identical
@@ -791,6 +802,8 @@ class TestRemoveOutliersChunk(TestCase):
         self.assertTrue(result[0]["geometry"].equals(result[1]["geometry"]))
         self.assertEqual(result[0]["timestamps"], result[1]["timestamps"])
         self.assertEqual(result[0]["velocities"], result[1]["velocities"])
+        self.assertEqual(result[0]["source"], result[1]["source"])
+        self.assertEqual(result[0]["mmsi"], result[1]["mmsi"])
 
 
 class TestRemoveOutliers(TestCase):

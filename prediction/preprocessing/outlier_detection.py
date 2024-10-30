@@ -244,7 +244,7 @@ def _remove_outliers_chunk(args: tuple) -> list[pd.Series]:
     Returns:
         List of processed rows
     """
-    chunk, thresholds, verbose = args
+    chunk, thresholds, verbose, additional_filter_columns = args
     new_rows = []
 
     for _, row in tqdm(chunk.iterrows(), total=len(chunk), disable=not verbose):
@@ -255,16 +255,9 @@ def _remove_outliers_chunk(args: tuple) -> list[pd.Series]:
             threshold_association_sog=thresholds["association_sog"],
             threshold_association_distance=thresholds["association_distance"],
             threshold_completeness=thresholds["completeness"],
+            additional_filter_columns=additional_filter_columns,
         )
-        for row in rows:  # TODO: This is a bug, should be new_rows.extend(rows), right now orientations are
-            # not being filtered and matched with the corresponding new trajectory
-            geometry = row["geometry"]
-            orientations = row["orientations"]
-            velocities = row["velocities"]
-            timestamps = row["timestamps"]
-
-            if len(geometry.xy[0]) == len(orientations) == len(velocities) == len(timestamps):
-                new_rows.append(row)
+        new_rows.extend(rows)
 
     return new_rows
 
