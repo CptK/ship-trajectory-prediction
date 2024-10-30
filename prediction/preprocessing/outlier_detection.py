@@ -28,6 +28,7 @@ class BoatType(TypedDict):
     track: np.ndarray
     timestamps: list[datetime]
     sogs: list[float]
+    indices: list[int]
 
 
 def validate_df(df: pd.DataFrame) -> None:
@@ -59,7 +60,7 @@ def _partition(
     sogs: list[float] | np.ndarray,
     threshold_partition_sog: float = 5.0,
     threshold_partition_distance: float = 50.0,
-) -> dict[str, list[np.ndarray | list[datetime] | list[float]]]:
+) -> dict[str, list[np.ndarray | list[datetime] | list[float] | list[int]]]:
     """This function partitions a track into subtracks based on the speed over ground (SOG) values.
 
     The partitioning is done by comparing the calculated speed between two points with the given SOG value.
@@ -93,9 +94,14 @@ def _partition(
             breakpts.append(i)
 
     if len(breakpts) == 1:
-        return {"tracks": [track], "timestamps": [timestamps], "sogs": [sogs]}
+        return {
+            "tracks": [track],
+            "timestamps": [timestamps],
+            "sogs": [sogs],
+            "indices": [list(range(len(track)))],
+        }
 
-    subtracks: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": []}
+    subtracks: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": [], "indices": []}
     for i in range(len(breakpts)):
         if i == len(breakpts) - 1:
             # For the last breakpoint, take all remaining points
@@ -109,6 +115,7 @@ def _partition(
             subtracks["tracks"].append(track[start:end])
             subtracks["timestamps"].append(timestamps[start:end])
             subtracks["sogs"].append(sogs[start:end])
+            subtracks["indices"].append(list(range(start, end)))
 
     assert len(subtracks["tracks"]) == len(subtracks["timestamps"]) == len(subtracks["sogs"])
 
@@ -116,7 +123,7 @@ def _partition(
 
 
 def _association(
-    subtracks: dict[str, list[np.ndarray | list[datetime] | list[float]]],
+    subtracks: dict[str, list[np.ndarray | list[datetime] | list[float] | list[int]]],
     threshold_association_sog: float = 15.0,
     threshold_association_distance: float = 50.0,
     threshold_completeness: int = 100,
@@ -132,7 +139,7 @@ def _association(
     distance threshold.
 
     Args:
-        subtracks: Dictionary containing subtracks, timestamps, and SOG values
+        subtracks: Dictionary containing subtracks, timestamps, SOG values and indices
         threshold_association_sog: Threshold for associating tracks based on SOG values
         threshold_association_distance: Threshold for associating tracks based on distance between points
                                         in kilometers.
@@ -141,18 +148,25 @@ def _association(
     all_tracks: list[np.ndarray] = cast(list[np.ndarray], subtracks["tracks"])
     all_timestamps: list[list[datetime]] = cast(list[list[datetime]], subtracks["timestamps"])
     all_sogs: list[list[float]] = cast(list[list[float]], subtracks["sogs"])
+    all_indices: list[list[int]] = cast(list[list[int]], subtracks["indices"])
 
     # if there is only one track, return it, if it is long enough
     if len(all_tracks) == 1 and len(all_tracks[0]) >= threshold_completeness:
-        return {"tracks": all_tracks, "timestamps": all_timestamps, "sogs": all_sogs}
+        return {"tracks": all_tracks, "timestamps": all_timestamps, "sogs": all_sogs, "indices": all_indices}
 
-    result: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": []}
+    result: dict[str, list] = {"tracks": [], "timestamps": [], "sogs": [], "indices": []}
 
     while len(all_tracks) > 1:
         current_track = all_tracks.pop(0)
         current_times = all_timestamps.pop(0)
         current_sogs = all_sogs.pop(0)
-        boat: BoatType = {"track": current_track, "timestamps": current_times, "sogs": current_sogs}
+        current_indices = all_indices.pop(0)
+        boat: BoatType = {
+            "track": current_track,
+            "timestamps": current_times,
+            "sogs": current_sogs,
+            "indices": current_indices,
+        }
         del_indices = []
         for i in range(len(all_tracks)):
             track, timestamps, sogs = all_tracks[i], all_timestamps[i], all_sogs[i]
@@ -166,17 +180,20 @@ def _association(
                 boat["track"] = np.concatenate((boat["track"], track))
                 boat["timestamps"].extend(timestamps)
                 boat["sogs"].extend(sogs)
+                boat["indices"].extend(all_indices[i])
                 del_indices.append(i)
 
         if len(boat["track"]) >= threshold_completeness:
             result["tracks"].append(boat["track"])
             result["timestamps"].append(boat["timestamps"])
             result["sogs"].append(boat["sogs"])
+            result["indices"].append(boat["indices"])
 
         for i in sorted(del_indices, reverse=True):
             del all_tracks[i]
             del all_timestamps[i]
             del all_sogs[i]
+            del all_indices[i]
 
     return result
 
@@ -188,6 +205,7 @@ def _remove_outliers_row(
     threshold_association_sog: float = 15.0,
     threshold_association_distance: float = 50.0,
     threshold_completeness: int = 100,
+    additional_filter_columns: list[str] = [],
 ) -> list[pd.Series]:
     """Process a single row of a DataFrame and remove outliers from the track.
 
@@ -201,6 +219,9 @@ def _remove_outliers_row(
         threshold_association_sog: Threshold for associating tracks based on SOG values
         threshold_association_distance: Threshold for associating tracks based on distance between points km
         threshold_completeness: Threshold for the minimum length of associated tracks (number of points, <=)
+        additional_filter_columns: Additional columns to filter the data on. The columns geometry, timestamps,
+            and velocities are always included. The additional columns must contain lists of the same length
+            as the geometry column and are the splitted and associated in the same way as the geometry column.
     """
     track = row["geometry"]
     timestamps = row["timestamps"]
@@ -217,6 +238,10 @@ def _remove_outliers_row(
         result[i]["geometry"] = LineString(new_tracks["tracks"][i])
         result[i]["timestamps"] = new_tracks["timestamps"][i]
         result[i]["velocities"] = new_tracks["sogs"][i]
+        indices = new_tracks["indices"][i]
+
+        for column in additional_filter_columns:
+            result[i][column] = [row[column][j] for j in indices]
 
     return result
 
@@ -230,7 +255,7 @@ def _remove_outliers_chunk(args: tuple) -> list[pd.Series]:
     Returns:
         List of processed rows
     """
-    chunk, thresholds, verbose = args
+    chunk, thresholds, verbose, additional_filter_columns = args
     new_rows = []
 
     for _, row in tqdm(chunk.iterrows(), total=len(chunk), disable=not verbose):
@@ -241,16 +266,9 @@ def _remove_outliers_chunk(args: tuple) -> list[pd.Series]:
             threshold_association_sog=thresholds["association_sog"],
             threshold_association_distance=thresholds["association_distance"],
             threshold_completeness=thresholds["completeness"],
+            additional_filter_columns=additional_filter_columns,
         )
-        for row in rows:  # TODO: This is a bug, should be new_rows.extend(rows), right now orientations are
-            # not being filtered and matched with the corresponding new trajectory
-            geometry = row["geometry"]
-            orientations = row["orientations"]
-            velocities = row["velocities"]
-            timestamps = row["timestamps"]
-
-            if len(geometry.xy[0]) == len(orientations) == len(velocities) == len(timestamps):
-                new_rows.append(row)
+        new_rows.extend(rows)
 
     return new_rows
 
@@ -263,6 +281,7 @@ def remove_outliers_parallel(
     threshold_association_distance: float = 50.0,
     threshold_completeness: int = 100,
     verbose: bool = True,
+    additional_filter_columns: list[str] = [],
     n_processes: int | None = None,
 ) -> pd.DataFrame:
     """
@@ -281,6 +300,9 @@ def remove_outliers_parallel(
         threshold_association_sog: Threshold for associating tracks based on SOG values
         threshold_association_distance: Threshold for associating tracks based on distance between points
         threshold_completeness: Threshold for the minimum length of associated tracks
+        additional_filter_columns: Additional columns to filter the data on. The columns geometry, timestamps,
+            and velocities are always included. The additional columns must contain lists of the same length
+            as the geometry column and are the splitted and associated in the same way as the geometry column.
         verbose: Whether to show progress bars
         n_processes: Number of processes to use for parallel processing. If None, the number of processes is
                      set to the number of available CPUs minus 1.
@@ -315,6 +337,7 @@ def remove_outliers_parallel(
             threshold_association_sog=threshold_association_sog,
             threshold_association_distance=threshold_association_distance,
             threshold_completeness=threshold_completeness,
+            additional_filter_columns=additional_filter_columns,
             verbose=verbose,
         )
 
@@ -334,7 +357,7 @@ def remove_outliers_parallel(
         "association_distance": threshold_association_distance,
         "completeness": threshold_completeness,
     }
-    process_args = [(chunk, thresholds, verbose) for chunk in chunks]
+    process_args = [(chunk, thresholds, verbose, additional_filter_columns) for chunk in chunks]
 
     # Process chunks in parallel
     with Pool(processes=n_processes) as pool:
@@ -357,6 +380,7 @@ def remove_outliers(
     threshold_association_sog: float = 15.0,
     threshold_association_distance: float = 50.0,
     threshold_completeness: int = 100,
+    additional_filter_columns: list[str] = [],
     verbose: bool = True,
 ) -> pd.DataFrame:
     """Remove outliers from the input DataFrame using a single process.
@@ -374,6 +398,9 @@ def remove_outliers(
         threshold_association_sog: Threshold for associating tracks based on SOG values
         threshold_association_distance: Threshold for associating tracks based on distance between points
         threshold_completeness: Threshold for the minimum length of associated tracks
+        additional_filter_columns: Additional columns to filter the data on. The columns geometry, timestamps,
+            and velocities are always included. The additional columns must contain lists of the same length
+            as the geometry column and are the splitted and associated in the same way as the geometry column.
         verbose: Whether to show progress bars
     """
     if any(
@@ -397,6 +424,7 @@ def remove_outliers(
             threshold_association_sog=threshold_association_sog,
             threshold_association_distance=threshold_association_distance,
             threshold_completeness=threshold_completeness,
+            additional_filter_columns=additional_filter_columns,
         )
         new_rows.extend(rows)
 
