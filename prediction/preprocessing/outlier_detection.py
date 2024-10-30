@@ -270,6 +270,7 @@ def remove_outliers_parallel(
     threshold_association_distance: float = 50.0,
     threshold_completeness: int = 100,
     verbose: bool = True,
+    additional_filter_columns: list[str] = [],
     n_processes: int | None = None,
 ) -> pd.DataFrame:
     """
@@ -288,6 +289,9 @@ def remove_outliers_parallel(
         threshold_association_sog: Threshold for associating tracks based on SOG values
         threshold_association_distance: Threshold for associating tracks based on distance between points
         threshold_completeness: Threshold for the minimum length of associated tracks
+        additional_filter_columns: Additional columns to filter the data on. The columns geometry, timestamps,
+            and velocities are always included. The additional columns must contain lists of the same length
+            as the geometry column and are the splitted and associated in the same way as the geometry column.
         verbose: Whether to show progress bars
         n_processes: Number of processes to use for parallel processing. If None, the number of processes is
                      set to the number of available CPUs minus 1.
@@ -322,6 +326,7 @@ def remove_outliers_parallel(
             threshold_association_sog=threshold_association_sog,
             threshold_association_distance=threshold_association_distance,
             threshold_completeness=threshold_completeness,
+            additional_filter_columns=additional_filter_columns,
             verbose=verbose,
         )
 
@@ -341,7 +346,7 @@ def remove_outliers_parallel(
         "association_distance": threshold_association_distance,
         "completeness": threshold_completeness,
     }
-    process_args = [(chunk, thresholds, verbose) for chunk in chunks]
+    process_args = [(chunk, thresholds, verbose, additional_filter_columns) for chunk in chunks]
 
     # Process chunks in parallel
     with Pool(processes=n_processes) as pool:

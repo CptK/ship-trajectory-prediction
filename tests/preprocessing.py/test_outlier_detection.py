@@ -1187,27 +1187,29 @@ class TestRemoveOutliersParallel(TestCase):
             "threshold_association_distance": 100.0,
             "threshold_completeness": 4,
         }
+        
+        # Create additional column data
+        self.base_sources = ["AIS", "AIS", "AIS", "AIS"]
+        self.base_mmsi = [123456789, 123456789, 123456789, 123456789]
+        self.base_cogs = [45.0, 45.0, 45.0, 45.0]
 
-    def create_test_df(self, num_rows: int, include_outliers: bool = False) -> pd.DataFrame:
+    def create_test_df(self, num_rows: int, include_outliers: bool = False, include_additional: bool = False) -> pd.DataFrame:
         """Helper function to create a test DataFrame with valid coordinates"""
         data = []
         for i in range(num_rows):
-            # Use modulo to keep coordinates within valid ranges
-            base_lat = i % 80  # Keep latitude within [-90, 90]
-            base_lng = i % 80  # Keep longitude within [-180, 180]
+            base_lat = i % 80
+            base_lng = i % 80
 
             if include_outliers and i % 2 == 1:
-                # Create track with outlier, but keep coordinates valid
                 track = LineString(
                     [
                         [base_lat, base_lng],
                         [base_lat, base_lng + 0.1],
-                        [base_lat, base_lng + 1.0],  # Large but valid jump
+                        [base_lat, base_lng + 1.0],
                         [base_lat, base_lng + 1.1],
                     ]
                 )
             else:
-                # Create normal track
                 track = LineString(
                     [
                         [base_lat, base_lng],
@@ -1223,11 +1225,163 @@ class TestRemoveOutliersParallel(TestCase):
                 "velocities": [10.0] * 4,
                 "vessel_id": f"VESSEL_{i}",
                 "vessel_type": "cargo",
-                "orientations": [0.0] * 4,
             }
+            
+            if include_additional:
+                row.update({
+                    "source": self.base_sources.copy(),
+                    "mmsi": self.base_mmsi.copy(),
+                    "cog": self.base_cogs.copy()
+                })
+            
             data.append(row)
 
         return pd.DataFrame(data)
+
+    def test_parallel_vs_single_process_with_additional_columns(self):
+        """Test that parallel processing gives same results as single process with additional columns"""
+        df = self.create_test_df(10, include_outliers=True, include_additional=True)
+        additional_columns = ["source", "mmsi", "cog"]
+
+        # Process with single process
+        single_result = remove_outliers(
+            df, 
+            **self.default_thresholds,
+            verbose=False,
+            additional_filter_columns=additional_columns
+        )
+
+        # Process with parallel processing
+        parallel_result = remove_outliers_parallel(
+            df,
+            **self.default_thresholds,
+            verbose=False,
+            n_processes=2,
+            additional_filter_columns=additional_columns
+        )
+
+        # Compare results
+        self.assertEqual(len(single_result), len(parallel_result))
+
+        # Sort both DataFrames for consistent comparison
+        single_result = single_result.sort_values("vessel_id").reset_index(drop=True)
+        parallel_result = parallel_result.sort_values("vessel_id").reset_index(drop=True)
+
+        for i in range(len(single_result)):
+            self.assertTrue(single_result.iloc[i]["geometry"].equals(parallel_result.iloc[i]["geometry"]))
+            self.assertEqual(single_result.iloc[i]["timestamps"], parallel_result.iloc[i]["timestamps"])
+            for col in additional_columns:
+                self.assertEqual(single_result.iloc[i][col], parallel_result.iloc[i][col])
+
+    def test_different_process_counts_with_additional_columns(self):
+        """Test processing with different numbers of processes and additional columns"""
+        df = self.create_test_df(20, include_outliers=True, include_additional=True)
+        additional_columns = ["source", "mmsi", "cog"]
+
+        results = {}
+        process_counts = [1, 2, 4]
+
+        for n_processes in process_counts:
+            results[n_processes] = remove_outliers_parallel(
+                df,
+                **self.default_thresholds,
+                verbose=False,
+                n_processes=n_processes,
+                additional_filter_columns=additional_columns
+            )
+
+        # Results should be the same regardless of process count
+        for n1 in process_counts:
+            for n2 in process_counts:
+                self.assertEqual(len(results[n1]), len(results[n2]))
+
+                r1 = results[n1].sort_values("vessel_id").reset_index(drop=True)
+                r2 = results[n2].sort_values("vessel_id").reset_index(drop=True)
+
+                for i in range(len(r1)):
+                    self.assertTrue(r1.iloc[i]["geometry"].equals(r2.iloc[i]["geometry"]))
+                    for col in additional_columns:
+                        self.assertEqual(r1.iloc[i][col], r2.iloc[i][col])
+
+    def test_chunk_boundaries_with_additional_columns(self):
+        """Test that track processing works correctly across chunk boundaries with additional columns"""
+        row_data = {
+            "geometry": LineString([[0, 0], [0, 0.1], [0, 0.2], [0, 0.3]]),
+            "timestamps": [self.base_time + timedelta(hours=i) for i in range(4)],
+            "velocities": [10.0] * 4,
+            "vessel_id": "VESSEL_1",
+            "source": self.base_sources,
+            "mmsi": self.base_mmsi,
+            "cog": self.base_cogs
+        }
+        
+        # Create DataFrame with identical consecutive rows
+        df = pd.DataFrame([row_data] * 10)
+        additional_columns = ["source", "mmsi", "cog"]
+
+        result_2_chunks = remove_outliers_parallel(
+            df,
+            **self.default_thresholds,
+            verbose=False,
+            n_processes=2,
+            additional_filter_columns=additional_columns
+        )
+        
+        result_3_chunks = remove_outliers_parallel(
+            df,
+            **self.default_thresholds,
+            verbose=False,
+            n_processes=3,
+            additional_filter_columns=additional_columns
+        )
+
+        self.assertEqual(len(result_2_chunks), len(result_3_chunks))
+        
+        # Compare additional columns across different chunk sizes
+        result_2_chunks = result_2_chunks.sort_values("vessel_id").reset_index(drop=True)
+        result_3_chunks = result_3_chunks.sort_values("vessel_id").reset_index(drop=True)
+        
+        for i in range(len(result_2_chunks)):
+            for col in additional_columns:
+                self.assertEqual(result_2_chunks.iloc[i][col], result_3_chunks.iloc[i][col])
+
+    def test_large_dataframe_with_additional_columns(self):
+        """Test parallel processing of large DataFrame with additional columns"""
+        df = self.create_test_df(1000, include_outliers=True, include_additional=True)
+        additional_columns = ["source", "mmsi", "cog"]
+
+        result = remove_outliers_parallel(
+            df,
+            **self.default_thresholds,
+            verbose=False,
+            n_processes=4,
+            additional_filter_columns=additional_columns
+        )
+
+        # Check that additional columns are properly maintained
+        for _, row in result.iterrows():
+            coords = list(row["geometry"].coords)
+            for col in additional_columns:
+                self.assertEqual(len(row[col]), len(coords))
+                if col == "source":
+                    self.assertTrue(all(s in self.base_sources for s in row[col]))
+                elif col == "mmsi":
+                    self.assertTrue(all(m in self.base_mmsi for m in row[col]))
+                elif col == "cog":
+                    self.assertTrue(all(c in self.base_cogs for c in row[col]))
+
+    def test_invalid_additional_columns(self):
+        """Test handling of invalid additional columns in parallel processing"""
+        df = self.create_test_df(10, include_additional=True)
+        
+        with self.assertRaises(KeyError):
+            remove_outliers_parallel(
+                df,
+                **self.default_thresholds,
+                verbose=False,
+                n_processes=2,
+                additional_filter_columns=["nonexistent_column"]
+            )
 
     def test_parallel_vs_single_process_results(self):
         """Test that parallel processing gives same results as single process"""
