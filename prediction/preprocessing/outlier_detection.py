@@ -364,6 +364,7 @@ def remove_outliers(
     threshold_association_sog: float = 15.0,
     threshold_association_distance: float = 50.0,
     threshold_completeness: int = 100,
+    additional_filter_columns: list[str] = [],
     verbose: bool = True,
 ) -> pd.DataFrame:
     """Remove outliers from the input DataFrame using a single process.
@@ -381,6 +382,9 @@ def remove_outliers(
         threshold_association_sog: Threshold for associating tracks based on SOG values
         threshold_association_distance: Threshold for associating tracks based on distance between points
         threshold_completeness: Threshold for the minimum length of associated tracks
+        additional_filter_columns: Additional columns to filter the data on. The columns geometry, timestamps,
+            and velocities are always included. The additional columns must contain lists of the same length
+            as the geometry column and are the splitted and associated in the same way as the geometry column.
         verbose: Whether to show progress bars
     """
     if any(
@@ -404,6 +408,7 @@ def remove_outliers(
             threshold_association_sog=threshold_association_sog,
             threshold_association_distance=threshold_association_distance,
             threshold_completeness=threshold_completeness,
+            additional_filter_columns=additional_filter_columns,
         )
         new_rows.extend(rows)
 
