@@ -25,7 +25,8 @@ dependencies = [
     "dask-geopandas",
     "scipy",
     "torch",
-    "tensorboard"
+    "tensorboard",
+    "fastdtw",
 ]
 
 [project.optional-dependencies]
@@ -147,5 +148,6 @@ module = [
     "tqdm.*",
     "geopandas.*",
     "psutil.*",
+    "fastdtw.*",
 ]
 ignore_missing_imports = true

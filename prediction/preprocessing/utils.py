@@ -2,7 +2,6 @@ from typing import cast
 
 import numpy as np
 import torch
-
 from fastdtw.fastdtw import fastdtw
 
 
@@ -84,21 +83,21 @@ def haversine_tensor(
     return distance
 
 
-def dtw_spatial(traj1: np.ndarray, traj2: np.ndarray) -> float:
+def dtw_spatial(traj1: np.ndarray, traj2: np.ndarray) -> tuple[float, list]:
     """
     Calculate DTW distance between trajectories based on spatial coordinates.
-    
+
     Args:
         traj1: First trajectory array with shape (n_points, 4) containing:
               - lat: Latitude in decimal degrees
-              - lon: Longitude in decimal degrees  
+              - lon: Longitude in decimal degrees
               - sog: Speed over ground in knots
               - cog: Course over ground in degrees [0, 360)
         traj2: Second trajectory array with shape (m_points, 4), same format
-            
+
     Returns:
         DTW distance based on Haversine distances between points
-        
+
     Example:
         >>> traj1 = np.array([[48.5, -125.5, 12.5, 180.0],
         ...                   [48.6, -125.4, 12.3, 182.0]])
@@ -106,9 +105,10 @@ def dtw_spatial(traj1: np.ndarray, traj2: np.ndarray) -> float:
         ...                   [48.5, -125.5, 11.8, 179.0]])
         >>> distance = dtw_spatial(traj1, traj2)
     """
-    distance, _ = fastdtw(traj1[:, :2], traj2[:, :2], 
-                         dist=lambda x, y: haversine(x[0], x[1], y[0], y[1]))
-    return distance
+    return cast(
+        tuple[float, list],
+        fastdtw(traj1[:, :2], traj2[:, :2], dist=lambda x, y: haversine(x[0], x[1], y[0], y[1])),
+    )
 
 
 def calc_sog(lat1: float, lng1: float, lat2: float, lng2: float, time: float) -> float:
