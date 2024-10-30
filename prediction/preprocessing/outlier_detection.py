@@ -194,6 +194,7 @@ def _remove_outliers_row(
     threshold_association_sog: float = 15.0,
     threshold_association_distance: float = 50.0,
     threshold_completeness: int = 100,
+    additional_filter_columns: list[str] = [],
 ) -> list[pd.Series]:
     """Process a single row of a DataFrame and remove outliers from the track.
 
@@ -207,6 +208,9 @@ def _remove_outliers_row(
         threshold_association_sog: Threshold for associating tracks based on SOG values
         threshold_association_distance: Threshold for associating tracks based on distance between points km
         threshold_completeness: Threshold for the minimum length of associated tracks (number of points, <=)
+        additional_filter_columns: Additional columns to filter the data on. The columns geometry, timestamps,
+            and velocities are always included. The additional columns must contain lists of the same length
+            as the geometry column and are the splitted and associated in the same way as the geometry column.
     """
     track = row["geometry"]
     timestamps = row["timestamps"]
@@ -223,6 +227,10 @@ def _remove_outliers_row(
         result[i]["geometry"] = LineString(new_tracks["tracks"][i])
         result[i]["timestamps"] = new_tracks["timestamps"][i]
         result[i]["velocities"] = new_tracks["sogs"][i]
+        indices = new_tracks["indices"][i]
+
+        for column in additional_filter_columns:
+            result[i][column] = [row[column][j] for j in indices]
 
     return result
 

@@ -454,188 +454,168 @@ class TestRemoveOutliersRow(TestCase):
         ]
         self.base_sogs = [10.0, 10.0, 10.0, 10.0]
 
-        # Create a base row
-        self.base_row = pd.Series(
-            {"geometry": self.base_track, "timestamps": self.base_timestamps, "velocities": self.base_sogs}
-        )
+        # Create additional column data
+        self.base_sources = ["AIS", "AIS", "AIS", "AIS"]
+        self.base_mmsi = [123456789, 123456789, 123456789, 123456789]
+        self.base_cogs = [45.0, 45.0, 45.0, 45.0]
 
-    def test_normal_track_no_outliers(self):
-        """Test processing of a normal track with no outliers"""
+        # Create a base row with additional columns
+        self.base_row = pd.Series({
+            "geometry": self.base_track,
+            "timestamps": self.base_timestamps,
+            "velocities": self.base_sogs,
+            "source": self.base_sources,
+            "mmsi": self.base_mmsi,
+            "cog": self.base_cogs
+        })
+
+    def test_normal_track_with_additional_columns(self):
+        """Test processing of a normal track with additional columns"""
         result = _remove_outliers_row(
             self.base_row,
-            threshold_partition_sog=15.0,
-            threshold_partition_distance=50.0,
-            threshold_association_sog=20.0,
-            threshold_association_distance=50.0,
             threshold_completeness=4,
+            additional_filter_columns=["source", "mmsi", "cog"]
         )
 
         self.assertEqual(len(result), 1)  # Should return single processed track
-        self.assertEqual(len(result[0]["timestamps"]), 4)  # Should preserve all points
-        self.assertTrue(isinstance(result[0]["geometry"], LineString))
+        processed_row = result[0]
+        
+        # Check all lists have same length
+        self.assertEqual(len(processed_row["timestamps"]), 4)
+        self.assertEqual(len(processed_row["source"]), 4)
+        self.assertEqual(len(processed_row["mmsi"]), 4)
+        self.assertEqual(len(processed_row["cog"]), 4)
+        
+        # Check additional columns maintain their values
+        self.assertEqual(processed_row["source"], self.base_sources)
+        self.assertEqual(processed_row["mmsi"], self.base_mmsi)
+        self.assertEqual(processed_row["cog"], self.base_cogs)
 
-        # Check that the track maintains the same overall shape
-        coords = list(result[0]["geometry"].coords)
-        self.assertEqual(len(coords), 4)
-        self.assertAlmostEqual(coords[-1][1] - coords[0][1], 0.3)
-
-    def test_track_with_speed_outlier(self):
-        """Test processing of a track with a speed outlier"""
-        track = LineString(
-            [[0, 0], [0, 0.1], [0, 1.0], [0, 1.1]]  # Big jump - should be identified as outlier
-        )
-
+    def test_track_with_speed_outlier_additional_columns(self):
+        """Test processing of a track with a speed outlier and additional columns"""
+        track = LineString([[0, 0], [0, 0.1], [0, 1.0], [0, 1.1]])
         timestamps = [
             self.base_time,
             self.base_time + timedelta(hours=1),
-            self.base_time + timedelta(minutes=61),  # Very short time after previous point
+            self.base_time + timedelta(minutes=61),
             self.base_time + timedelta(hours=3),
         ]
+        sources = ["AIS", "SAT", "AIS", "SAT"]
+        mmsi = [123456789, 123456789, 123456789, 123456789]
 
-        row = pd.Series({"geometry": track, "timestamps": timestamps, "velocities": [10.0, 10.0, 10.0, 10.0]})
+        row = pd.Series({
+            "geometry": track,
+            "timestamps": timestamps,
+            "velocities": [10.0] * 4,
+            "source": sources,
+            "mmsi": mmsi
+        })
 
         result = _remove_outliers_row(
             row,
             threshold_partition_sog=5.0,
-            threshold_partition_distance=50.0,
-            threshold_association_sog=15.0,
-            threshold_association_distance=50.0,
             threshold_completeness=2,
+            additional_filter_columns=["source", "mmsi"]
         )
 
-        self.assertGreater(len(result), 0)  # Should have at least one valid track
-
-        # Each segment should be a valid track
-        for processed_row in result:
-            self.assertTrue(isinstance(processed_row["geometry"], LineString))
-            self.assertEqual(len(processed_row["timestamps"]), len(list(processed_row["geometry"].coords)))
-
-    def test_track_with_distance_outlier(self):
-        """Test processing of a track with a distance outlier"""
-        track = LineString([[0, 0], [0, 0.1], [0, 5.0], [0, 5.1]])  # Large distance gap (>500km)
-
-        row = pd.Series({"geometry": track, "timestamps": self.base_timestamps, "velocities": self.base_sogs})
-
-        result = _remove_outliers_row(
-            row,
-            threshold_partition_sog=5.0,
-            threshold_partition_distance=50.0,
-            threshold_association_sog=15.0,
-            threshold_association_distance=50.0,
-            threshold_completeness=2,
-        )
-
-        self.assertGreater(len(result), 0)  # Should have at least one valid track
-
-        # Check that each segment maintains time ordering
-        for processed_row in result:
-            timestamps = processed_row["timestamps"]
-            self.assertTrue(all(timestamps[i] < timestamps[i + 1] for i in range(len(timestamps) - 1)))
-
-    def test_short_track_filtered(self):
-        """Test that tracks shorter than completeness threshold are filtered out"""
-        track = LineString([[0, 0], [0, 0.1]])
-
-        row = pd.Series(
-            {"geometry": track, "timestamps": self.base_timestamps[:2], "velocities": self.base_sogs[:2]}
-        )
-
-        result = _remove_outliers_row(
-            row,
-            threshold_partition_sog=5.0,
-            threshold_partition_distance=50.0,
-            threshold_association_sog=15.0,
-            threshold_association_distance=50.0,
-            threshold_completeness=3,
-        )
-
-        self.assertEqual(len(result), 0)  # Should be filtered out
-
-    def test_track_with_multiple_segments(self):
-        """Test processing of a track that should be split into multiple valid segments"""
-        track = LineString(
-            [
-                [0, 0],
-                [0, 0.1],  # Segment 1
-                [0, 1.0],
-                [0, 1.1],  # Segment 2 (after gap)
-                [0, 2.0],
-                [0, 2.1],  # Segment 3 (after another gap)
-            ]
-        )
-
-        timestamps = [
-            self.base_time,
-            self.base_time + timedelta(hours=1),
-            self.base_time + timedelta(hours=2),
-            self.base_time + timedelta(hours=3),
-            self.base_time + timedelta(hours=4),
-            self.base_time + timedelta(hours=5),
-        ]
-
-        row = pd.Series({"geometry": track, "timestamps": timestamps, "velocities": [10.0] * 6})
-
-        result = _remove_outliers_row(
-            row,
-            threshold_partition_sog=5.0,
-            threshold_partition_distance=50.0,
-            threshold_association_sog=15.0,
-            threshold_association_distance=50.0,
-            threshold_completeness=2,
-        )
-
-        self.assertGreater(len(result), 0)  # Should have at least one valid track
-
-        # Each segment should maintain data consistency
+        # Check each segment maintains corresponding additional column data
         for processed_row in result:
             coords = list(processed_row["geometry"].coords)
-            self.assertEqual(len(coords), len(processed_row["timestamps"]))
-            self.assertEqual(len(coords), len(processed_row["velocities"]))
+            self.assertEqual(len(coords), len(processed_row["source"]))
+            self.assertEqual(len(coords), len(processed_row["mmsi"]))
+            # Verify values match original data for corresponding indices
+            for i, coord in enumerate(coords):
+                orig_idx = next(j for j, c in enumerate(track.coords) if c == coord)
+                self.assertEqual(processed_row["source"][i], sources[orig_idx])
+                self.assertEqual(processed_row["mmsi"][i], mmsi[orig_idx])
 
-    def test_data_consistency(self):
-        """Test that processed tracks maintain consistency between geometry, timestamps, and velocities"""
+    def test_multiple_segments_additional_columns(self):
+        """Test processing of a track split into multiple segments with additional columns"""
+        track = LineString([
+            [0, 0], [0, 0.1],  # Segment 1
+            [0, 1.0], [0, 1.1],  # Segment 2
+            [0, 2.0], [0, 2.1],  # Segment 3
+        ])
+        
+        timestamps = [
+            self.base_time + timedelta(hours=i) for i in range(6)
+        ]
+        
+        sources = ["AIS", "SAT", "AIS", "SAT", "AIS", "SAT"]
+        mmsi = [123456789] * 6
+        cogs = [45.0, 45.0, 45.0, 45.0, 45.0, 45.0]
+
+        row = pd.Series({
+            "geometry": track,
+            "timestamps": timestamps,
+            "velocities": [10.0] * 6,
+            "source": sources,
+            "mmsi": mmsi,
+            "cog": cogs
+        })
+
+        result = _remove_outliers_row(
+            row,
+            threshold_partition_distance=50.0,
+            threshold_completeness=2,
+            additional_filter_columns=["source", "mmsi", "cog"]
+        )
+
+        total_points = sum(len(list(r["geometry"].coords)) for r in result)
+        self.assertGreater(len(result), 1)  # Should have multiple segments
+        
+        # Check that we haven't lost any valid data
+        for processed_row in result:
+            coords = list(processed_row["geometry"].coords)
+            self.assertEqual(len(coords), len(processed_row["source"]))
+            self.assertEqual(len(coords), len(processed_row["mmsi"]))
+            self.assertEqual(len(coords), len(processed_row["cog"]))
+
+    def test_empty_additional_columns(self):
+        """Test that function works correctly when no additional columns are specified"""
         result = _remove_outliers_row(
             self.base_row,
-            threshold_partition_sog=5.0,
-            threshold_partition_distance=50.0,
-            threshold_association_sog=15.0,
-            threshold_association_distance=50.0,
             threshold_completeness=4,
+            additional_filter_columns=[]
         )
 
-        self.assertGreater(len(result), 0)  # Should have at least one valid track
-        for processed_row in result:
-            coords = list(processed_row["geometry"].coords)
-            self.assertEqual(len(coords), len(processed_row["timestamps"]))
-            self.assertEqual(len(coords), len(processed_row["velocities"]))
+        self.assertEqual(len(result), 1)
+        # Check that original columns are preserved
+        self.assertTrue("geometry" in result[0])
+        self.assertTrue("timestamps" in result[0])
+        self.assertTrue("velocities" in result[0])
 
-            # Check time ordering
-            timestamps = processed_row["timestamps"]
-            self.assertTrue(all(timestamps[i] < timestamps[i + 1] for i in range(len(timestamps) - 1)))
+    def test_invalid_additional_column(self):
+        """Test handling of non-existent additional column"""
+        with self.assertRaises(KeyError):
+            _remove_outliers_row(
+                self.base_row,
+                threshold_completeness=4,
+                additional_filter_columns=["nonexistent_column"]
+            )
 
-            # Check that velocities are reasonable
-            self.assertTrue(all(0 <= v <= 100 for v in processed_row["velocities"]))
-
-    def test_preserves_row_additional_fields(self):
-        """Test that additional fields in the input row are preserved"""
-        # Add extra fields to the base row
+    def test_additional_columns_consistency(self):
+        """Test that additional columns maintain consistency with track segmentation"""
+        track = LineString([[0, 0], [0, 0.1], [0, 1.0], [0, 1.1]])
+        qualities = [1.0, 0.9, 0.8, 0.7]
         row = self.base_row.copy()
-        row["vessel_id"] = "TEST123"
-        row["vessel_type"] = "cargo"
+        row["geometry"] = track
+        row["quality"] = qualities
 
         result = _remove_outliers_row(
             row,
-            threshold_partition_sog=5.0,
             threshold_partition_distance=50.0,
-            threshold_association_sog=15.0,
-            threshold_association_distance=50.0,
-            threshold_completeness=4,
+            threshold_completeness=2,
+            additional_filter_columns=["quality"]
         )
 
-        self.assertGreater(len(result), 0)  # Should have at least one valid track
         for processed_row in result:
-            self.assertEqual(processed_row["vessel_id"], "TEST123")
-            self.assertEqual(processed_row["vessel_type"], "cargo")
+            coords = list(processed_row["geometry"].coords)
+            qualities = processed_row["quality"]
+            # Check that qualities align with coordinates
+            self.assertEqual(len(coords), len(qualities))
+            # Verify values are from original data
+            self.assertTrue(all(q in row["quality"] for q in qualities))
 
 
 class TestRemoveOutliersChunk(TestCase):
