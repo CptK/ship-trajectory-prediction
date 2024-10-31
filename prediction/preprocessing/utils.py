@@ -147,31 +147,31 @@ def calc_sog(lat1: float, lng1: float, lat2: float, lng2: float, time: float) ->
 
 def azimuth(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate azimuth angle between two points on Earth.
-    
-    The azimuth is the angle between the north vector and the direction to 
+
+    The azimuth is the angle between the north vector and the direction to
     the target point, measured clockwise in degrees.
-    
+
     Args:
         lat1: Starting point latitude in decimal degrees
         lon1: Starting point longitude in decimal degrees
         lat2: Ending point latitude in decimal degrees
         lon2: Ending point longitude in decimal degrees
-        
+
     Returns:
         Azimuth angle in degrees [0, 360)
-        
+
     Example:
         >>> azimuth = calculate_azimuth(48.0, -125.0, 48.1, -125.1)
         >>> print(f"Azimuth angle: {azimuth:.1f} degrees")
     """
     lat1, lon1 = np.radians(lat1), np.radians(lon1)
     lat2, lon2 = np.radians(lat2), np.radians(lon2)
-    
+
     dlon = lon2 - lon1
-    
+
     x = np.sin(dlon) * np.cos(lat2)
-    y = (np.cos(lat1) * np.sin(lat2) - 
-         np.sin(lat1) * np.cos(lat2) * np.cos(dlon))
-    
+    y = np.cos(lat1) * np.sin(lat2) - np.sin(lat1) * np.cos(lat2) * np.cos(dlon)
+
     azimuth = np.degrees(np.arctan2(x, y))
-    return (azimuth + 360) % 360
+    result = (azimuth + 360) % 360
+    return cast(float, result)

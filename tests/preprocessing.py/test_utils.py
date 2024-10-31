@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from numpy.testing import assert_almost_equal
 
-from prediction.preprocessing.utils import calc_sog, dtw_spatial, haversine, haversine_tensor, azimuth
+from prediction.preprocessing.utils import azimuth, calc_sog, dtw_spatial, haversine, haversine_tensor
 
 
 class TestHaversineTensor(TestCase):
@@ -298,61 +298,29 @@ class TestAzimuth(TestCase):
         """Set up test cases with known azimuths."""
         # Tolerance for floating point comparisons
         self.precision = 0.1
-        
+
     def test_cardinal_directions(self):
         """Test azimuth for cardinal directions from origin."""
         # From point (0,0) to cardinal directions
         # North
-        self.assertAlmostEqual(
-            azimuth(0, 0, 1, 0),
-            0.0,
-            delta=self.precision
-        )
+        self.assertAlmostEqual(azimuth(0, 0, 1, 0), 0.0, delta=self.precision)
         # East
-        self.assertAlmostEqual(
-            azimuth(0, 0, 0, 1),
-            90.0,
-            delta=self.precision
-        )
+        self.assertAlmostEqual(azimuth(0, 0, 0, 1), 90.0, delta=self.precision)
         # South
-        self.assertAlmostEqual(
-            azimuth(0, 0, -1, 0),
-            180.0,
-            delta=self.precision
-        )
+        self.assertAlmostEqual(azimuth(0, 0, -1, 0), 180.0, delta=self.precision)
         # West
-        self.assertAlmostEqual(
-            azimuth(0, 0, 0, -1),
-            270.0,
-            delta=self.precision
-        )
+        self.assertAlmostEqual(azimuth(0, 0, 0, -1), 270.0, delta=self.precision)
 
     def test_intercardinal_directions(self):
         """Test azimuth for intercardinal directions."""
         # Northeast
-        self.assertAlmostEqual(
-            azimuth(0, 0, 1, 1),
-            45.0,
-            delta=self.precision
-        )
+        self.assertAlmostEqual(azimuth(0, 0, 1, 1), 45.0, delta=self.precision)
         # Southeast
-        self.assertAlmostEqual(
-            azimuth(0, 0, -1, 1),
-            135.0,
-            delta=self.precision
-        )
+        self.assertAlmostEqual(azimuth(0, 0, -1, 1), 135.0, delta=self.precision)
         # Southwest
-        self.assertAlmostEqual(
-            azimuth(0, 0, -1, -1),
-            225.0,
-            delta=self.precision
-        )
+        self.assertAlmostEqual(azimuth(0, 0, -1, -1), 225.0, delta=self.precision)
         # Northwest
-        self.assertAlmostEqual(
-            azimuth(0, 0, 1, -1),
-            315.0,
-            delta=self.precision
-        )
+        self.assertAlmostEqual(azimuth(0, 0, 1, -1), 315.0, delta=self.precision)
 
     def test_real_world_coordinates(self):
         """Test azimuth with real-world coordinates."""
@@ -362,7 +330,7 @@ class TestAzimuth(TestCase):
         self.assertAlmostEqual(
             azimuth(ny_lat, ny_lon, london_lat, london_lon),
             51.2,  # Corrected expected azimuth
-            delta=1.0  # Reasonable tolerance for real-world example
+            delta=1.0,  # Reasonable tolerance for real-world example
         )
 
     def test_same_point(self):
