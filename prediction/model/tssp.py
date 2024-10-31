@@ -44,7 +44,9 @@ class TSSP:
             n_steps: Number of future steps to predict
 
         Returns:
-            Array of predicted locations with shape (n_steps, 2) containing [lat, lon]
+            tuple: (predictions, similar_traj)
+                - predictions: Array of predicted locations with shape (n_steps, 2) containing [lat, lon]
+                - similar_traj: Most similar trajectory array from database with same format as input
         """
         similar_traj = self._find_most_similar_trajectory(target_traj)
         predictions = self._predict_locations(target_traj, similar_traj, n_steps)
