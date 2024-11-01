@@ -2,7 +2,7 @@ from .dataset import AISDataSet, MaskedAISDataset
 from .filter_data import filter_data
 from .loader import download_all_data, download_data, load_data
 from .tsspl_dataset import TSSPLDataset
-from .vessel_types import vessel_groups
+from .code_mappings import vessel_groups, status_codes
 
 __all__ = [
     "AISDataSet",
@@ -12,5 +12,6 @@ __all__ = [
     "download_data",
     "load_data",
     "vessel_groups",
+    "status_codes",
     "TSSPLDataset",
 ]
