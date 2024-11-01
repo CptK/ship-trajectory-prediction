@@ -1,9 +1,9 @@
+import random
 from unittest import TestCase
 
 import numpy as np
 import torch
 import torch.nn as nn
-import random
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader
 
