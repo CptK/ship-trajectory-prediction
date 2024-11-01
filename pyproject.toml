@@ -25,7 +25,9 @@ dependencies = [
     "dask-geopandas",
     "scipy",
     "torch",
-    "tensorboard"
+    "tensorboard",
+    "fastdtw",
+    "scikit-learn",
 ]
 
 [project.optional-dependencies]
@@ -73,7 +75,9 @@ ignore-names = [
     "x",
     "y",
     "z",
-    "Jf"
+    "Jf",
+    "*X",
+    "X*",
 ]
 
 [tool.pytest.ini_options]
@@ -147,5 +151,7 @@ module = [
     "tqdm.*",
     "geopandas.*",
     "psutil.*",
+    "fastdtw.*",
+    "sklearn.*",
 ]
 ignore_missing_imports = true

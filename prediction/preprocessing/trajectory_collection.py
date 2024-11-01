@@ -60,9 +60,10 @@ def build_trajectories(
                     "orientations": x["COG"].tolist() if len(x) >= min_points else None,
                     "start_time": x["BaseDateTime"].min() if len(x) >= min_points else None,
                     "end_time": x["BaseDateTime"].max() if len(x) >= min_points else None,
-                    "point_count": len(x),
+                    "point_count": len(x) if len(x) >= min_points else None,
                     "vessel_type": vessel_groups[int(x["VesselType"].iloc[0])],
                     "timestamps": x["BaseDateTime"].tolist() if len(x) >= min_points else None,
+                    "statuses": x["Status"].tolist() if len(x) >= min_points else None,
                 }
             )
             if len(x) >= min_points

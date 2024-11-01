@@ -2,6 +2,7 @@ from typing import cast
 
 import numpy as np
 import torch
+from fastdtw.fastdtw import fastdtw
 
 
 def haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -82,6 +83,34 @@ def haversine_tensor(
     return distance
 
 
+def dtw_spatial(traj1: np.ndarray, traj2: np.ndarray) -> tuple[float, list]:
+    """
+    Calculate DTW distance between trajectories based on spatial coordinates.
+
+    Args:
+        traj1: First trajectory array with shape (n_points, 4) containing:
+              - lat: Latitude in decimal degrees
+              - lon: Longitude in decimal degrees
+              - sog: Speed over ground in knots
+              - cog: Course over ground in degrees [0, 360)
+        traj2: Second trajectory array with shape (m_points, 4), same format
+
+    Returns:
+        DTW distance based on Haversine distances between points
+
+    Example:
+        >>> traj1 = np.array([[48.5, -125.5, 12.5, 180.0],
+        ...                   [48.6, -125.4, 12.3, 182.0]])
+        >>> traj2 = np.array([[48.4, -125.6, 11.5, 178.0],
+        ...                   [48.5, -125.5, 11.8, 179.0]])
+        >>> distance = dtw_spatial(traj1, traj2)
+    """
+    return cast(
+        tuple[float, list],
+        fastdtw(traj1[:, :2], traj2[:, :2], dist=lambda x, y: haversine(x[0], x[1], y[0], y[1])),
+    )
+
+
 def calc_sog(lat1: float, lng1: float, lat2: float, lng2: float, time: float) -> float:
     """This function calculates the speed between two points given their coordinates and time difference.
 
@@ -114,3 +143,35 @@ def calc_sog(lat1: float, lng1: float, lat2: float, lng2: float, time: float) ->
 
     distance = haversine(lat1, lng1, lat2, lng2)
     return distance / (time + 1e-10) * 3600  # convert to km/h, add small number to avoid division by zero
+
+
+def azimuth(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate azimuth angle between two points on Earth.
+
+    The azimuth is the angle between the north vector and the direction to
+    the target point, measured clockwise in degrees.
+
+    Args:
+        lat1: Starting point latitude in decimal degrees
+        lon1: Starting point longitude in decimal degrees
+        lat2: Ending point latitude in decimal degrees
+        lon2: Ending point longitude in decimal degrees
+
+    Returns:
+        Azimuth angle in degrees [0, 360)
+
+    Example:
+        >>> azimuth = calculate_azimuth(48.0, -125.0, 48.1, -125.1)
+        >>> print(f"Azimuth angle: {azimuth:.1f} degrees")
+    """
+    lat1, lon1 = np.radians(lat1), np.radians(lon1)
+    lat2, lon2 = np.radians(lat2), np.radians(lon2)
+
+    dlon = lon2 - lon1
+
+    x = np.sin(dlon) * np.cos(lat2)
+    y = np.cos(lat1) * np.sin(lat2) - np.sin(lat1) * np.cos(lat2) * np.cos(dlon)
+
+    azimuth = np.degrees(np.arctan2(x, y))
+    result = (azimuth + 360) % 360
+    return cast(float, result)

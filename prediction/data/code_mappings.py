@@ -22,3 +22,10 @@ def vessel_groups() -> dict:
 
     groups = {categories[i]: category_desc(categories[i]) for i in types_df["num"].unique()}
     return groups
+
+
+def status_codes() -> dict:
+    """Return a dictionary of status codes and their corresponding descriptions."""
+    status_codes_path = DATA_PATH / "AIS_status_codes.csv"
+    codes_df = pd.read_csv(status_codes_path)
+    return {r["num"]: r["description"] for _, r in codes_df.iterrows()}

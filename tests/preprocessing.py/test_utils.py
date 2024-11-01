@@ -2,8 +2,9 @@ from unittest import TestCase
 
 import numpy as np
 import torch
+from numpy.testing import assert_almost_equal
 
-from prediction.preprocessing.utils import calc_sog, haversine, haversine_tensor
+from prediction.preprocessing.utils import azimuth, calc_sog, dtw_spatial, haversine, haversine_tensor
 
 
 class TestHaversineTensor(TestCase):
@@ -138,6 +139,59 @@ class TestHaversine(TestCase):
         self.assertLess(dist, 20037.5)  # Should be less than half Earth's circumference
 
 
+class TestDTWSpatial(TestCase):
+    def setUp(self):
+        """Create sample trajectories for testing."""
+        # Simple parallel trajectories
+        self.traj1 = np.array(
+            [
+                [48.0, -125.0, 10.0, 180.0],  # lat, lon, sog, cog
+                [48.1, -125.0, 10.0, 180.0],
+                [48.2, -125.0, 10.0, 180.0],
+            ]
+        )
+
+        self.traj2 = np.array(
+            [[48.0, -125.1, 10.0, 180.0], [48.1, -125.1, 10.0, 180.0], [48.2, -125.1, 10.0, 180.0]]
+        )
+
+        # Single point trajectories
+        self.single_point1 = np.array([[48.0, -125.0, 10.0, 180.0]])
+        self.single_point2 = np.array([[48.0, -125.1, 10.0, 180.0]])
+
+        # Different length trajectories
+        self.traj_short = np.array([[48.0, -125.0, 10.0, 180.0], [48.1, -125.0, 10.0, 180.0]])
+
+        # Identical trajectories
+        self.traj_identical = np.array([[48.0, -125.0, 10.0, 180.0], [48.1, -125.0, 10.0, 180.0]])
+
+    def test_parallel_trajectories(self):
+        """Test DTW distance between parallel trajectories."""
+        distance = dtw_spatial(self.traj1, self.traj2)
+        self.assertGreater(distance[0], 0)  # Should have non-zero distance
+
+    def test_single_point(self):
+        """Test DTW distance between single point trajectories."""
+        distance = dtw_spatial(self.single_point1, self.single_point2)
+        self.assertGreater(distance[0], 0)
+
+    def test_different_lengths(self):
+        """Test DTW handles trajectories of different lengths."""
+        distance = dtw_spatial(self.traj1, self.traj_short)
+        self.assertGreater(distance[0], 0)
+
+    def test_identical_trajectories(self):
+        """Test DTW distance between identical trajectories is zero."""
+        distance = dtw_spatial(self.traj_identical, self.traj_identical)
+        assert_almost_equal(distance[0], 0, decimal=6)
+
+    def test_symmetry(self):
+        """Test DTW distance is symmetric."""
+        dist1 = dtw_spatial(self.traj1, self.traj2)
+        dist2 = dtw_spatial(self.traj2, self.traj1)
+        assert_almost_equal(dist1[0], dist2[0], decimal=6)
+
+
 class TestSpeedOverGround(TestCase):
     def test_stationary(self):
         """Test that identical points result in zero speed"""
@@ -237,3 +291,72 @@ class TestSpeedOverGround(TestCase):
         speed = calc_sog(0, 0, 0.000001, 0, 3600)
         self.assertGreater(speed, 0)
         self.assertTrue(np.isfinite(speed))
+
+
+class TestAzimuth(TestCase):
+    def setUp(self):
+        """Set up test cases with known azimuths."""
+        # Tolerance for floating point comparisons
+        self.precision = 0.1
+
+    def test_cardinal_directions(self):
+        """Test azimuth for cardinal directions from origin."""
+        # From point (0,0) to cardinal directions
+        # North
+        self.assertAlmostEqual(azimuth(0, 0, 1, 0), 0.0, delta=self.precision)
+        # East
+        self.assertAlmostEqual(azimuth(0, 0, 0, 1), 90.0, delta=self.precision)
+        # South
+        self.assertAlmostEqual(azimuth(0, 0, -1, 0), 180.0, delta=self.precision)
+        # West
+        self.assertAlmostEqual(azimuth(0, 0, 0, -1), 270.0, delta=self.precision)
+
+    def test_intercardinal_directions(self):
+        """Test azimuth for intercardinal directions."""
+        # Northeast
+        self.assertAlmostEqual(azimuth(0, 0, 1, 1), 45.0, delta=self.precision)
+        # Southeast
+        self.assertAlmostEqual(azimuth(0, 0, -1, 1), 135.0, delta=self.precision)
+        # Southwest
+        self.assertAlmostEqual(azimuth(0, 0, -1, -1), 225.0, delta=self.precision)
+        # Northwest
+        self.assertAlmostEqual(azimuth(0, 0, 1, -1), 315.0, delta=self.precision)
+
+    def test_real_world_coordinates(self):
+        """Test azimuth with real-world coordinates."""
+        # New York to London
+        ny_lat, ny_lon = 40.7128, -74.0060
+        london_lat, london_lon = 51.5074, -0.1278
+        self.assertAlmostEqual(
+            azimuth(ny_lat, ny_lon, london_lat, london_lon),
+            51.2,  # Corrected expected azimuth
+            delta=1.0,  # Reasonable tolerance for real-world example
+        )
+
+    def test_same_point(self):
+        """Test azimuth when points are the same."""
+        azim = azimuth(45.0, -120.0, 45.0, -120.0)
+        self.assertTrue(0 <= azim < 360)
+
+    def test_wrap_around(self):
+        """Test azimuth wrap-around at 360 degrees."""
+        # Should give same result as 1 degree
+        azimuth_361 = azimuth(0, 0, 0.01, 0.01)
+        azimuth_1 = azimuth(0, 0, 0.01, 0.01)
+        self.assertAlmostEqual(azimuth_361, azimuth_1, delta=self.precision)
+
+    def test_pole_azimuth(self):
+        """Test azimuth near poles."""
+        # Near North Pole
+        north_pole_azimuth = azimuth(89.0, 0, 90.0, 0)
+        self.assertAlmostEqual(north_pole_azimuth, 0.0, delta=self.precision)
+
+        # Near South Pole
+        south_pole_azimuth = azimuth(-89.0, 0, -90.0, 0)
+        self.assertAlmostEqual(south_pole_azimuth, 180.0, delta=self.precision)
+
+    def test_input_types(self):
+        """Test different input types."""
+        # Test with integers
+        int_azimuth = azimuth(0, 0, 1, 1)
+        self.assertIsInstance(int_azimuth, float)

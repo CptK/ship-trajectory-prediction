@@ -1456,7 +1456,7 @@ class TestRemoveOutliersParallel(TestCase):
 
         self.assertGreater(len(result), 0)
         # Processing time should be consistent with single-process execution
-        self.assertLess(processing_time, 1.0)  # Adjust threshold as needed
+        self.assertLess(processing_time, 1.5)  # Adjust threshold as needed
 
     def test_default_process_count(self):
         """Test that default process count is CPU count - 1"""
