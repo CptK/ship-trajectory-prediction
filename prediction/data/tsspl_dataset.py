@@ -1,7 +1,7 @@
 import numpy as np
 import torch
-from torch.utils.data import Dataset
 from sklearn.preprocessing import MinMaxScaler
+from torch.utils.data import Dataset
 
 
 class TSSPLDataset(Dataset):

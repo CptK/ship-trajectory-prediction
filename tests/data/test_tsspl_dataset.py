@@ -1,8 +1,9 @@
 from unittest import TestCase
+
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 from sklearn.preprocessing import MinMaxScaler
+from torch.utils.data import DataLoader
 
 from prediction.data.tsspl_dataset import TSSPLDataset
 
