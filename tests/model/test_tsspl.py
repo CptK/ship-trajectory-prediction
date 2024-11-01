@@ -3,6 +3,7 @@ from unittest import TestCase
 import numpy as np
 import torch
 import torch.nn as nn
+import random
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader
 
@@ -191,6 +192,15 @@ class TestTSSPL(TestCase):
 
     def setUp(self):
         """Set up test data."""
+        # Set random seed for reproducibility
+        random.seed(42)
+        np.random.seed(42)
+        torch.manual_seed(42)
+        torch.cuda.manual_seed(42)
+        torch.cuda.manual_seed_all(42)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
         # Create sample trajectories
         self.traj1 = np.array([[48.0, -125.0 - i * 0.1, 4.0, 270.0] for i in range(20)])
         self.traj2 = np.array([[48.0 + i * 0.1, -125.0, 12.0, 0.0] for i in range(18)])
