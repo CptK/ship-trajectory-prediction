@@ -27,6 +27,7 @@ dependencies = [
     "torch",
     "tensorboard",
     "fastdtw",
+    "scikit-learn",
 ]
 
 [project.optional-dependencies]
@@ -149,5 +150,6 @@ module = [
     "geopandas.*",
     "psutil.*",
     "fastdtw.*",
+    "sklearn.*",
 ]
 ignore_missing_imports = true
