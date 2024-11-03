@@ -1,5 +1,7 @@
 # ignore raw data
 data/raw/
+logs/
+prediction/notebooks/*.pkl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
