@@ -1,3 +1,10 @@
+"""Trajectory-based Similarity Search Prediction (TSSP) model for vessel trajectory prediction.
+
+This module is based on the TSSP model presented in the paper:
+Vessel Trajectory Prediction Using Historical Automatic Identification System Data (2020) by Alizadeh et al.,
+doi: 10.1017/S0373463320000442.
+"""
+
 from typing import cast
 
 import numpy as np
@@ -7,6 +14,35 @@ from prediction.preprocessing.utils import dtw_spatial
 
 
 class TSSP:
+    """
+    Trajectory-based Similarity Search Prediction (TSSP) for vessel trajectory prediction.
+
+    Improves upon PSSP by considering entire movement patterns rather than individual points. Uses Dynamic
+    Time Warping (DTW) to find the most similar historical trajectory based on spatial distance, speed
+    patterns, and course patterns. Assumes constant spatial distance between target and similar trajectories
+    during prediction. More accurate than PSSP due to pattern-based matching, particularly for vessels
+    following established routes. Requires pre-processed AIS trajectory data with consistent time intervals.
+
+    Example:
+    >>> import matplotlib.pyplot as plt
+    >>> from numpy import array
+    >>> from numpy.random import normal
+    >>> from prediction.model.tssp import TSSP
+    >>> db = [array([[48+i*0.1+normal(0,0.01), -125+0.1*i+ normal(0,0.01), 15, 180] for i in range(12)])]
+    >>> target = array([[48.1+i*0.1+normal(0,0.01), -125.1+0.1*i+ normal(0,0.01), 15, 180] for i in range(5)])
+    >>> model = TSSP(db)
+    >>> predictions, similar_points = model.predict(target, n_steps=5)
+
+    >>> plt.figure(figsize=(10, 6))
+    >>> plt.plot(target[:, 1], target[:, 0], "b-o", label="Target")
+    >>> plt.plot(similar_points[:, 1], similar_points[:, 0], "g-o", label="Most Similar")
+    >>> plt.plot(predictions[:, 1], predictions[:, 0], "r--o", label="Predictions")
+    >>> plt.xlabel("Longitude")
+    >>> plt.ylabel("Latitude")
+    >>> plt.legend()
+    >>> plt.show()
+    """
+
     def __init__(
         self, trajectory_database: list[np.ndarray], w_d: float = 0.6, w_s: float = 0.2, w_c: float = 0.2
     ):
@@ -136,45 +172,3 @@ class TSSP:
         future_points[:, 1] += lon_diff
 
         return future_points
-
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    # Generate sample data
-    def generate_sample_trajectory(start_lat, start_lon, points=10, noise=0.01):
-        """Generate noisy trajectory data."""
-        trajectory = np.zeros((points, 4))
-        for i in range(points):
-            trajectory[i] = [
-                start_lat + i * 0.1 + np.random.normal(0, noise),  # lat
-                start_lon + i * 0.1 + np.random.normal(0, noise),  # lon
-                15 + np.random.normal(0, 1),  # speed
-                180 + np.random.normal(0, 5),  # course
-            ]
-        return trajectory
-
-    # Create database of trajectories
-    database = [generate_sample_trajectory(48.0, -125.0, points=np.random.randint(8, 15)) for _ in range(20)]
-
-    # Create target trajectory
-    target_traj = generate_sample_trajectory(48.1, -125.1, points=5)
-
-    # Initialize TSSP
-    tssp = TSSP(database)
-
-    # Find most similar trajectory and predict future positions
-    predictions, similar_traj = tssp.predict(target_traj, n_steps=5)
-
-    # Plotting
-    plt.figure(figsize=(10, 6))
-    plt.plot(target_traj[:, 1], target_traj[:, 0], "b-o", label="Target")
-    plt.plot(similar_traj[:, 1], similar_traj[:, 0], "g-o", label="Most Similar")
-    plt.plot(predictions[:, 1], predictions[:, 0], "r--o", label="Predictions")
-    plt.xlabel("Longitude")
-    plt.ylabel("Latitude")
-    plt.legend()
-    plt.grid(True)
-    plt.title("TSSP Trajectory Prediction")
-    plt.show()

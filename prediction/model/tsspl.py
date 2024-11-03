@@ -1,3 +1,10 @@
+"""Trajectory-based Similarity Search Prediction with LSTM (TSSPL) model for vessel trajectory prediction.
+
+This module is based on the TSSPL model presented in the paper:
+Vessel Trajectory Prediction Using Historical Automatic Identification System Data (2020) by Alizadeh et al.,
+doi: 10.1017/S0373463320000442.
+"""
+
 from typing import cast
 
 import numpy as np
@@ -11,6 +18,38 @@ from prediction.preprocessing.utils import dtw_spatial
 
 
 class SpatialLSTM(nn.Module):
+    """Trajectory-based Similarity Search Prediction with LSTM (TSSPL) for vessel trajectory prediction.
+
+    Enhances TSSP by using LSTM neural networks to predict dynamic spatial distances instead of assuming
+    constant distances. Combines DTW for trajectory similarity matching with LSTM for learning complex
+    patterns in distance variations. Accounts for maritime environmental factors and vessel dynamics. Most
+    accurate of the three models, especially for long-term predictions. Requires substantial historical AIS
+    data for LSTM training and trajectory matching. Best suited for applications requiring high-accuracy
+    predictions in dynamic maritime environments.
+
+    Example:
+    >>> import matplotlib.pyplot as plt
+    >>> from numpy import array
+    >>> from numpy.random import normal, randint
+    >>> from prediction.model.tsspl import TSSPL
+    >>> db = [array(
+    ...     [[48 + i * 0.1 + normal(0, 0.01), -125 + 0.1 * i + normal(0, 0.01), 15, 180] for i in range(12)]
+    ... ) for _ in range(2)]
+
+    >>> target = array([[48.1+i*0.1+normal(0,0.01), -125.1+0.1*i+ normal(0,0.01), 15, 180] for i in range(5)])
+    >>> tsspl = TSSPL(db, n_epochs=2)
+    >>> predictions, similar_traj = tsspl.predict(target, n_steps=5)
+
+    >>> plt.figure(figsize=(10, 6))
+    >>> plt.plot(target[:, 1], target[:, 0], "b-o", label="Target")
+    >>> plt.plot(similar_traj[:, 1], similar_traj[:, 0], "g-o", label="Most Similar")
+    >>> plt.plot(predictions[:, 1], predictions[:, 0], "r--o", label="Predictions")
+    >>> plt.xlabel("Longitude")
+    >>> plt.ylabel("Latitude")
+    >>> plt.legend()
+    >>> plt.show()
+    """
+
     def __init__(self, hidden_size: int = 64, num_layers: int = 1):
         """LSTM model for predicting spatial differences."""
         super().__init__()
@@ -191,7 +230,6 @@ class TSSPL:
 
                 # Calculate predicted position
                 next_idx = len(target_traj) + i
-                print(f"Next index: {next_idx}")
                 if next_idx < len(similar_traj):
                     pred_lat = similar_traj[next_idx, 0] + pred_lat_diff[0, 0]
                     pred_lon = similar_traj[next_idx, 1] + pred_lon_diff[0, 0]
@@ -205,36 +243,3 @@ class TSSPL:
                     break
 
         return predictions, similar_traj
-
-
-if __name__ == "__main__":
-    # Test code remains the same
-    def generate_sample_trajectory(start_lat, start_lon, points=10, noise=0.01):
-        trajectory = np.zeros((points, 4))
-        for i in range(points):
-            trajectory[i] = [
-                start_lat + i * 0.1 + np.random.normal(0, noise),
-                start_lon + i * 0.1 + np.random.normal(0, noise),
-                15 + np.random.normal(0, 1),
-                180 + np.random.normal(0, 5),
-            ]
-        return trajectory
-
-    database = [generate_sample_trajectory(48.0, -125.0, points=np.random.randint(15, 25)) for _ in range(20)]
-    target_traj = generate_sample_trajectory(48.1, -125.1, points=5)
-
-    tsspl = TSSPL(database)
-    predictions, similar_traj = tsspl.predict(target_traj, n_steps=5)
-
-    import matplotlib.pyplot as plt
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(target_traj[:, 1], target_traj[:, 0], "b-o", label="Target")
-    plt.plot(similar_traj[:, 1], similar_traj[:, 0], "g-o", label="Most Similar")
-    plt.plot(predictions[:, 1], predictions[:, 0], "r--o", label="Predictions")
-    plt.xlabel("Longitude")
-    plt.ylabel("Latitude")
-    plt.legend()
-    plt.grid(True)
-    plt.title("TSSPL Trajectory Prediction")
-    plt.show()

@@ -1,3 +1,10 @@
+"""Point-based Similarity Search Prediction (PSSP) model for vessel trajectory prediction.
+
+This module is based on the PSSP model presented in the paper:
+Vessel Trajectory Prediction Using Historical Automatic Identification System Data (2020) by Alizadeh et al.,
+doi: 10.1017/S0373463320000442.
+"""
+
 from typing import cast
 
 import numpy as np
@@ -6,6 +13,33 @@ from prediction.preprocessing.utils import azimuth, haversine
 
 
 class PSSP:
+    """Point-based Similarity Search Prediction (PSSP) for vessel trajectory prediction.
+
+    Predicts vessel movements by finding the most similar historical point to the target vessel's current
+    position, comparing spatial distance (Haversine), speed (SOG), and course (COG). Assumes constant spatial
+    distance between target and similar points  during prediction. Includes azimuth angle constraint (< 22.5°)
+    to ensure similar movement directions. Best suited for short-term predictions where vessels maintain
+    consistent movement patterns. Requires AIS data with latitude, longitude, SOG, and COG values.
+
+    Example:
+    >>> import matplotlib.pyplot as plt
+    >>> import numpy as np
+    >>> from prediction.model.pssp import PSSP
+    >>> database = [np.array([[48 + i * 0.1, -125 + 0.1*i, 15, 180] for i in range(25)])]
+    >>> target = np.array([48.8, -124.4, 15.0, 45.0])
+    >>> model = PSSP(database)
+    >>> predictions, similar_points = model.predict(target, n_steps=5)
+
+    >>> plt.figure(figsize=(10, 6))
+    >>> plt.plot(target[1], target[0], "b-o", label="Target")
+    >>> plt.plot(similar_points[:, 1], similar_points[:, 0], "g-o", label="Most Similar")
+    >>> plt.plot(predictions[:, 1], predictions[:, 0], "r--o", label="Predictions")
+    >>> plt.xlabel("Longitude")
+    >>> plt.ylabel("Latitude")
+    >>> plt.legend()
+    >>> plt.show()
+    """
+
     def __init__(
         self,
         trajectory_database: list[np.ndarray],
@@ -160,56 +194,3 @@ class PSSP:
             return None
 
         return cast(np.ndarray, trajectory[point_idx + 1])
-
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-
-    def generate_sample_trajectory(start_lat, start_lon, points=10, noise=0.01):
-        """Generate noisy trajectory data."""
-        trajectory = np.zeros((points, 4))
-        for i in range(points):
-            trajectory[i] = [
-                start_lat + i * 0.1 + np.random.normal(0, noise),  # lat
-                start_lon + i * 0.1 + np.random.normal(0, noise),  # lon
-                15 + np.random.normal(0, 1),  # speed
-                180 + np.random.normal(0, 5),  # course
-            ]
-        return trajectory
-
-    # Generate database with slightly different starting points
-    database = [
-        generate_sample_trajectory(
-            start_lat=48.0 + np.random.normal(0, 0.3), start_lon=-125.0 + np.random.normal(0, 0.3), points=20
-        )
-        for _ in range(10)
-    ]
-
-    # Create target point (similar to trajectories but slightly offset)
-    target = np.array([48.1, -125.1, 15.0, 45.0, 0.0])
-
-    # Initialize PSSP
-    pssp = PSSP(database)
-
-    # Predict future positions
-    predictions, similar_points = pssp.predict(target, n_steps=5)
-
-    # Plotting
-    plt.figure(figsize=(10, 6))
-
-    # Plot all trajectories
-    for traj in database:
-        plt.plot(traj[:, 1], traj[:, 0], "gray", alpha=0.3)
-
-    # Plot target, similar points and predictions
-    plt.plot(target[1], target[0], "b*", markersize=15, label="Target")
-    if len(similar_points) > 0:
-        plt.plot(similar_points[:, 1], similar_points[:, 0], "g-o", label="Similar Points", markersize=10)
-        plt.plot(predictions[:, 1], predictions[:, 0], "r--o", label="Predictions", markersize=8)
-
-    plt.xlabel("Longitude")
-    plt.ylabel("Latitude")
-    plt.legend()
-    plt.grid(True)
-    plt.title("PSSP Point Prediction")
-    plt.show()
