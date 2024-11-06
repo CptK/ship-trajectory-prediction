@@ -1,3 +1,5 @@
+"""Module for segmenting AIS data based on status changes."""
+
 from multiprocessing import Pool, cpu_count
 from typing import cast
 

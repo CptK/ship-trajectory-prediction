@@ -1,5 +1,6 @@
 from .outlier_detection import remove_outliers, remove_outliers_parallel
 from .trajectory_collection import build_trajectories, load_and_build
+from .trajectory_resampling import compare_trajectory_pairs, resample_trajectories
 from .utils import calc_sog, haversine, haversine_tensor
 
 __all__ = [
@@ -10,4 +11,6 @@ __all__ = [
     "calc_sog",
     "haversine",
     "haversine_tensor",
+    "resample_trajectories",
+    "compare_trajectory_pairs",
 ]
