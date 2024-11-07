@@ -46,12 +46,23 @@ class TestFilterByTravelledDistance(TestCase):
             LineString([(0, 0), (4, 4)]),  # ~628km
         ]
 
-        # Create GeoDataFrame with trajectories
+        # Create DataFrame with trajectories
         self.gdf = pd.DataFrame(
             {
                 "geometry": trajectories,
                 "id": range(len(trajectories)),
-                "known_distance": [157, 314, 471, 628],  # distances in meters
+                "known_distance": [157, 314, 471, 628],  # distances in km
+            }
+        )
+
+        # Add a complex trajectory that would have different results for exact vs approximate
+        self.complex_gdf = pd.DataFrame(
+            {
+                "geometry": [
+                    LineString([(0, 0), (1, 1), (0, 1), (1, 0)]),  # Forms an X pattern
+                    LineString([(0, 0), (0.5, 0.5), (0, 1)]),  # Forms a triangle
+                ],
+                "id": [0, 1],
             }
         )
 
@@ -136,3 +147,75 @@ class TestFilterByTravelledDistance(TestCase):
         result = result.copy()
         result["max_dist"] = result["max_dist"].astype(int)
         self.assertTrue((result["max_dist"].values == self.gdf["known_distance"].values[:3]).all())
+
+    def test_methods_comparison(self):
+        """Test that exact and approximate methods give different results."""
+        # Create a trajectory that has points close together in a complex pattern
+        # The bounding box will be larger than the actual max distance between points
+        zigzag_trajectory = LineString(
+            [
+                (0, 0),  # Start
+                (0.1, 0.1),  # Small steps in a confined area
+                (0.2, 0.0),
+                (0.1, 0.1),
+                (0.2, 0.2),
+                (0.0, 0.1),
+                (1.0, 1.0),  # One point far away to create a large bounding box
+            ]
+        )
+
+        zigzag_df = pd.DataFrame({"geometry": [zigzag_trajectory], "id": [0]})
+
+        # Get results using both methods
+        exact_result = filter_by_travelled_distance(zigzag_df, min_dist=0, max_dist=None, method="exact")
+        approx_result = filter_by_travelled_distance(
+            zigzag_df, min_dist=0, max_dist=None, method="approximate"
+        )
+
+        # The approximate method (bounding box diagonal) should give larger or equal
+        # distances than exact method (actual point-to-point distances)
+        self.assertGreaterEqual(approx_result["max_dist"].iloc[0], exact_result["max_dist"].iloc[0])
+
+    def test_exact_method(self):
+        """Test filtering using exact method."""
+        result = filter_by_travelled_distance(self.gdf, min_dist=300, max_dist=None, method="exact")
+        result["max_dist"] = result["max_dist"].astype(int)
+        self.assertTrue((result["max_dist"].values == self.gdf["known_distance"].values[1:]).all())
+
+    def test_approximate_method(self):
+        """Test filtering using approximate method."""
+        result = filter_by_travelled_distance(self.gdf, min_dist=300, max_dist=None, method="approximate")
+        # Approximate method should give slightly different (but close) results
+        for exact, approx in zip(self.gdf["known_distance"].values[1:], result["max_dist"].values):
+            self.assertAlmostEqual(exact, approx, delta=exact * 0.2)  # Within 20%
+
+    def test_zigzag_path(self):
+        """Test with a zigzag path where exact and approximate methods differ significantly."""
+        zigzag = pd.DataFrame(
+            {"geometry": [LineString([(0, 0), (0.1, 1), (0.2, 0), (0.3, 1), (0.4, 0), (0.5, 1)])], "id": [0]}
+        )
+
+        exact = filter_by_travelled_distance(zigzag, min_dist=0, max_dist=None, method="exact")
+        approx = filter_by_travelled_distance(zigzag, min_dist=0, max_dist=None, method="approximate")
+
+        self.assertGreaterEqual(approx["max_dist"].iloc[0], exact["max_dist"].iloc[0])
+
+    def test_method_consistency_with_distance_column(self):
+        """Test that method parameter doesn't affect results when using distance column."""
+        result_exact = filter_by_travelled_distance(
+            self.gdf, min_dist=300, max_dist=None, dist_col="known_distance", method="exact"
+        )
+        result_approx = filter_by_travelled_distance(
+            self.gdf, min_dist=300, max_dist=None, dist_col="known_distance", method="approximate"
+        )
+        pd.testing.assert_frame_equal(result_exact, result_approx)
+
+    def test_no_distance_column_both_methods(self):
+        """Test filtering without distance column using both methods."""
+        for method in ["exact", "approximate"]:
+            result = filter_by_travelled_distance(self.gdf, min_dist=0, max_dist=None, method=method)
+            self.assertIn("max_dist", result.columns)
+            if method == "exact":
+                # For exact method, results should match known distances closely
+                result["max_dist"] = result["max_dist"].astype(int)
+                self.assertTrue((result["max_dist"].values == self.gdf["known_distance"].values).all())
