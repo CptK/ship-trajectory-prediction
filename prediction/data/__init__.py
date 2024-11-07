@@ -1,6 +1,6 @@
 from .code_mappings import status_codes, vessel_groups
 from .dataset import AISDataSet, MaskedAISDataset
-from .filter_data import filter_data, filter_by_travelled_distance
+from .filter_data import filter_by_travelled_distance, filter_data
 from .loader import download_all_data, download_data, load_data
 from .tsspl_dataset import TSSPLDataset
 
