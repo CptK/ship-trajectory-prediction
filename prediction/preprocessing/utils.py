@@ -3,6 +3,7 @@ from typing import cast
 import numpy as np
 import torch
 from fastdtw.fastdtw import fastdtw
+from shapely.geometry import LineString
 
 
 def haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -175,3 +176,22 @@ def azimuth(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     azimuth = np.degrees(np.arctan2(x, y))
     result = (azimuth + 360) % 360
     return cast(float, result)
+
+
+def pairwise_point_distances(line: LineString) -> np.ndarray:
+    """
+    Compute the pairwise distances between the points of a LineString.
+
+    Args:
+        line: A LineString object.
+
+    Returns:
+        A 2D numpy array of shape (n_points, n_points) containing the pairwise distances between the points.
+    """
+    points = np.array(line.coords)
+    dist_matrix = np.zeros((len(points), len(points)))
+    for i in range(len(points)):
+        for j in range(i + 1, len(points)):
+            dist_matrix[i, j] = dist_matrix[j, i] = haversine(*points[i, :][::-1], *points[j, :][::-1])
+
+    return dist_matrix

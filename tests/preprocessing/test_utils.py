@@ -1,10 +1,19 @@
+from math import isclose
 from unittest import TestCase
 
 import numpy as np
 import torch
 from numpy.testing import assert_almost_equal
+from shapely.geometry import LineString
 
-from prediction.preprocessing.utils import azimuth, calc_sog, dtw_spatial, haversine, haversine_tensor
+from prediction.preprocessing.utils import (
+    azimuth,
+    calc_sog,
+    dtw_spatial,
+    haversine,
+    haversine_tensor,
+    pairwise_point_distances,
+)
 
 
 class TestHaversineTensor(TestCase):
@@ -360,3 +369,74 @@ class TestAzimuth(TestCase):
         # Test with integers
         int_azimuth = azimuth(0, 0, 1, 1)
         self.assertIsInstance(int_azimuth, float)
+
+
+class TestPairwisePointDistances(TestCase):
+    def setUp(self):
+        """Set up test fixtures."""
+        # Simple line with 3 points forming a triangle in the US
+        self.simple_line = LineString(
+            [
+                (-122.4194, 37.7749),  # San Francisco
+                (-118.2437, 34.0522),  # Los Angeles
+                (-115.1398, 36.1699),  # Las Vegas
+            ]
+        )
+
+        # Line with identical points
+        self.identical_points_line = LineString(
+            [(-122.4194, 37.7749), (-122.4194, 37.7749)]  # San Francisco  # Same point
+        )
+
+        # Empty line
+        self.empty_line = LineString([])
+
+    def test_matrix_dimensions(self):
+        """Test if the output matrix has correct dimensions."""
+        result = pairwise_point_distances(self.simple_line)
+        self.assertEqual(result.shape, (3, 3))
+
+        result_identical = pairwise_point_distances(self.identical_points_line)
+        self.assertEqual(result_identical.shape, (2, 2))
+
+        result_empty = pairwise_point_distances(self.empty_line)
+        self.assertEqual(result_empty.shape, (0, 0))
+
+    def test_matrix_symmetry(self):
+        """Test if the distance matrix is symmetric."""
+        result = pairwise_point_distances(self.simple_line)
+        np.testing.assert_array_almost_equal(result, result.T)
+
+    def test_diagonal_zeros(self):
+        """Test if diagonal elements are zero."""
+        result = pairwise_point_distances(self.simple_line)
+        np.testing.assert_array_almost_equal(np.diagonal(result), np.zeros(len(result)))
+
+    def test_known_distances(self):
+        """Test against pre-calculated known distances."""
+        result = pairwise_point_distances(self.simple_line)
+
+        # Known approximate distances in kilometers
+        sf_to_la = 559.0  # SF to LA
+        la_to_lv = 368.0  # LA to Las Vegas
+        sf_to_lv = 670.0  # SF to Las Vegas
+
+        # Test with 1% tolerance due to different haversine implementations
+        self.assertTrue(isclose(result[0][1], sf_to_la, rel_tol=0.01))
+        self.assertTrue(isclose(result[1][2], la_to_lv, rel_tol=0.01))
+        self.assertTrue(isclose(result[0][2], sf_to_lv, rel_tol=0.01))
+
+    def test_identical_points(self):
+        """Test distance between identical points is zero."""
+        result = pairwise_point_distances(self.identical_points_line)
+        np.testing.assert_array_almost_equal(result, np.zeros((2, 2)))
+
+    def test_empty_line(self):
+        """Test empty line returns empty matrix."""
+        result = pairwise_point_distances(self.empty_line)
+        self.assertEqual(result.shape, (0, 0))
+
+    def test_distances_are_positive(self):
+        """Test if all distances are non-negative."""
+        result = pairwise_point_distances(self.simple_line)
+        self.assertTrue(np.all(result >= 0))
