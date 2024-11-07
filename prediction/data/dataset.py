@@ -58,36 +58,34 @@ class AISDataSet(Dataset):
         train_end_idx = n_points - self.n_pred
 
         geometry = np.array(row["geometry"].xy).T
-        start_time = row["timestamps"][0]
-        timestamps = [(t - start_time).total_seconds() for t in row["timestamps"]]
 
-        assert (
-            len(geometry) == len(row["velocities"]) == len(row["orientations"]) == len(timestamps)
-        ), f"Mismatch: {len(geometry)} {len(row['velocities'])} {len(row['orientations'])} {len(timestamps)}"
+        if len(geometry) < self.seq_len + self.n_pred:
+            return None, None
 
-        x_geometry = geometry[train_start_idx:train_end_idx]
-        x_velocities = row["velocities"][train_start_idx:train_end_idx]
-        x_timestatmps = timestamps[train_start_idx:train_end_idx]
-        x_orientations = row["orientations"][train_start_idx:train_end_idx]
-
-        y_geometry = geometry[train_end_idx:]
-        y_velocities = row["velocities"][train_end_idx:]
-        y_timestatmps = timestamps[train_end_idx:]
-        y_orientations = row["orientations"][train_end_idx:]
-
-        x_res = x_geometry
-        y_res = y_geometry
+        x_res = geometry[train_start_idx:train_end_idx]
+        y_res = geometry[train_end_idx:]
 
         if self.include_speed:
             # right now x has shape (n_points, 2), adding speed will make it (n_points, 3)
+            x_velocities = row["velocities"][train_start_idx:train_end_idx]
+            y_velocities = row["velocities"][train_end_idx:]
+
             x_res = np.concatenate([x_res, np.array(x_velocities)[:, None]], axis=1)
             y_res = np.concatenate([y_res, np.array(y_velocities)[:, None]], axis=1)
 
         if self.include_orientation:
+            x_orientations = row["orientations"][train_start_idx:train_end_idx]
+            y_orientations = row["orientations"][train_end_idx:]
+
             x_res = np.concatenate([x_res, np.array(x_orientations)[:, None]], axis=1)
             y_res = np.concatenate([y_res, np.array(y_orientations)[:, None]], axis=1)
 
         if self.include_timestamps:
+            start_time = row["timestamps"][0]
+            timestamps = [(t - start_time).total_seconds() for t in row["timestamps"]]
+            x_timestatmps = timestamps[train_start_idx:train_end_idx]
+            y_timestatmps = timestamps[train_end_idx:]
+
             x_res = np.concatenate([x_res, np.array(x_timestatmps)[:, None]], axis=1)
             y_res = np.concatenate([y_res, np.array(y_timestatmps)[:, None]], axis=1)
 
@@ -95,12 +93,17 @@ class AISDataSet(Dataset):
 
     def _process_chunk(self, df: pd.DataFrame):
         x_res, y_res = [], []
+        invalid_count = 0
         for _, row in tqdm(df.iterrows(), total=len(df), disable=not self.verbose):
             x, y = self._process_row(row)
-            x_res.append(x)
-            y_res.append(y)
 
-        return x_res, y_res
+            if x is not None and y is not None:
+                x_res.append(x)
+                y_res.append(y)
+            else:
+                invalid_count += 1
+
+        return x_res, y_res, invalid_count
 
     def _process_df(self, df: pd.DataFrame):
         chunk_size = len(df) // self.n_workers
@@ -112,9 +115,14 @@ class AISDataSet(Dataset):
         with Pool(self.n_workers) as p:
             results = p.map(self._process_chunk, chunks)
 
-        for x, y in results:
+        invalid_count = 0
+        for x, y, count in results:
             self.X.extend(x)
             self.y.extend(y)
+            invalid_count += count
+
+        if invalid_count > 0:
+            print(f"Skipped {invalid_count} rows due to insufficient data")
 
     def _normalize(self, X: list, y: list):  # noqa: N803
         normalized_x = []
@@ -200,6 +208,54 @@ class AISDataSet(Dataset):
                 - 1 if include_timestamps
         """
         return self.X[idx], self.y[idx]
+
+
+class AISCompletionDataset(AISDataSet):
+    """Dataset for trajectory completion task with seq2seq models.
+
+    Every sample consists of a 3-tuple:
+    - input_seq: Array of shape (seq_len, n_features)
+    - decoder_input: Array of shape (n_pred, n_features), the first element is the last element of input_seq,
+        the rest are the target_seq without the last element
+    - target_seq: Array of shape (n_pred, n_features)
+    """
+
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        seq_len: int,
+        n_pred: int,
+        **kwargs,
+    ) -> None:
+        """Initialize the trajectory completion dataset.
+
+        Args:
+            df: DataFrame containing the AIS data
+            seq_len: Number of points to consider before predicting
+            n_pred: Number of points to predict
+            **kwargs: Additional arguments passed to AISDataSet
+        """
+        super().__init__(df, n_pred=n_pred, seq_len=seq_len, **kwargs)
+
+    def __getitem__(self, idx):
+        """Get a trajectory completion sample.
+
+        Returns:
+            tuple: (input_seq, target_seq) where:
+                input_seq: array (seq_len, n_features) with:
+                    - Lat/Lon normalized to [-1, 1]
+                    - Speed normalized to [-1, 1]
+                    - Course normalized to sin/cos
+                    - Timestamp normalized to [0, 1]
+                target_seq: array (n_pred, n_features) with the same normalization
+        """
+        X, y = super().__getitem__(idx)
+        y_all = np.concatenate([y[-1][None], y], axis=0)
+
+        # create decoder_input as y without the last element
+        decoder_input = y_all[:-1]
+
+        return X, decoder_input, y
 
 
 class MaskedAISDataset(AISDataSet):
