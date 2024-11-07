@@ -13,6 +13,7 @@ from prediction.preprocessing.utils import (
     haversine,
     haversine_tensor,
     pairwise_point_distances,
+    max_bbox_diagonal,
 )
 
 
@@ -440,3 +441,89 @@ class TestPairwisePointDistances(TestCase):
         """Test if all distances are non-negative."""
         result = pairwise_point_distances(self.simple_line)
         self.assertTrue(np.all(result >= 0))
+
+
+class TestMaxBboxDiagonal(TestCase):
+    def test_simple_diagonal(self):
+        """Test with a simple diagonal line."""
+        line = LineString([(0, 0), (1, 1)])
+        diagonal = max_bbox_diagonal(line)
+        # The diagonal should be approximately 157 km
+        self.assertAlmostEqual(diagonal, 157.25, delta=0.1)
+
+    def test_horizontal_line(self):
+        """Test with a horizontal line."""
+        line = LineString([(0, 0), (1, 0)])
+        diagonal = max_bbox_diagonal(line)
+        # Should be approximately 111 km for 1 degree longitude at equator
+        self.assertAlmostEqual(diagonal, 111.19, delta=0.1)
+
+    def test_vertical_line(self):
+        """Test with a vertical line."""
+        line = LineString([(0, 0), (0, 1)])
+        diagonal = max_bbox_diagonal(line)
+        # Should be approximately 111 km for 1 degree latitude
+        self.assertAlmostEqual(diagonal, 111.19, delta=0.1)
+
+    def test_complex_line(self):
+        """Test with a complex line that zigzags."""
+        line = LineString([
+            (0, 0),    # Start
+            (0.5, 1),  # North
+            (1, 0.5),  # East
+            (0.5, 0),  # South
+            (0, 0.5)   # Back to middle
+        ])
+        diagonal = max_bbox_diagonal(line)
+        # The bounding box should be 1x1 degree
+        self.assertAlmostEqual(diagonal, 157.25, delta=0.1)
+
+    def test_two_identical_points(self):
+        """Test with a line consisting of two identical points."""
+        line = LineString([(0, 0), (0, 0)])
+        diagonal = max_bbox_diagonal(line)
+        self.assertEqual(diagonal, 0)
+
+    def test_realistic_ship_path(self):
+        """Test with a realistic ship path in the North Sea."""
+        line = LineString([
+            (3.0, 51.5),   # Rotterdam area
+            (4.0, 52.0),   # Amsterdam area
+            (5.0, 53.0),   # German Bight
+            (6.0, 53.5),   # German coast
+            (7.0, 54.0)    # Danish waters
+        ])
+        diagonal = max_bbox_diagonal(line)
+        # The diagonal should be a few hundred kilometers
+        self.assertGreater(diagonal, 200)  # More than 200 km
+        self.assertLess(diagonal, 500)     # Less than 500 km
+
+    def test_around_dateline(self):
+        """Test with a path crossing the international date line."""
+        line = LineString([
+            (179.5, 0),
+            (-179.5, 0)
+        ])
+        diagonal = max_bbox_diagonal(line)
+        # Should be approximately 111 km (1 degree at equator)
+        self.assertAlmostEqual(diagonal, 111.19, delta=0.1)
+
+    def test_near_poles(self):
+        """Test with a path near the poles where meridians converge."""
+        line = LineString([
+            (0, 89),
+            (10, 89)
+        ])
+        diagonal = max_bbox_diagonal(line)
+        # Distance should be relatively small due to meridian convergence
+        self.assertLess(diagonal, 50)  # Less than 50 km
+
+    def test_negative_coordinates(self):
+        """Test with negative coordinates."""
+        line = LineString([
+            (-1, -1),
+            (-2, -2)
+        ])
+        diagonal = max_bbox_diagonal(line)
+        # Should be approximately 157 km
+        self.assertAlmostEqual(diagonal, 157.23, delta=0.1)

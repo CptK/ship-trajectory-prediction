@@ -195,3 +195,16 @@ def pairwise_point_distances(line: LineString) -> np.ndarray:
             dist_matrix[i, j] = dist_matrix[j, i] = haversine(*points[i, :][::-1], *points[j, :][::-1])
 
     return dist_matrix
+
+
+def max_bbox_diagonal(line: LineString) -> float:
+    """Compute the length of the diagonal of the bounding box of a LineString.
+
+    Args:
+        line: A LineString object.
+
+    Returns:
+        The length of the diagonal of the bounding box of the LineString.
+    """
+    minx, miny, maxx, maxy = line.bounds
+    return haversine(miny, minx, maxy, maxx)
