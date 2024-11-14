@@ -2,6 +2,7 @@
 
 from multiprocessing import Pool, cpu_count
 from typing import cast
+from tqdm import tqdm
 
 import pandas as pd
 from shapely.geometry import LineString
@@ -142,22 +143,26 @@ def _process_row(
 
     # Create new rows for each segment
     new_rows = []
+    skipped = 0
     for segment in segments:
-        new_row = row.copy()
-        new_row[status_column] = [statuses[i] for i in segment]
+        try:
+            new_row = row.copy()
+            new_row[status_column] = [statuses[i] for i in segment]
 
-        for column in additional_list_columns:
-            if isinstance(row[column], LineString):
-                new_row[column] = LineString([cast(LineString, row[column]).coords[i] for i in segment])
-            else:
-                new_row[column] = [row[column][i] for i in segment]
+            for column in additional_list_columns:
+                if isinstance(row[column], LineString):
+                    new_row[column] = LineString([cast(LineString, row[column]).coords[i] for i in segment])
+                else:
+                    new_row[column] = [row[column][i] for i in segment]
 
-        if point_count_column is not None:
-            new_row[point_count_column] = len(segment)
+            if point_count_column is not None:
+                new_row[point_count_column] = len(segment)
 
-        new_rows.append(new_row)
+            new_rows.append(new_row)
+        except Exception as e:
+            skipped += 1
 
-    return new_rows
+    return new_rows, skipped
 
 
 def _process_rows(
@@ -186,20 +191,21 @@ def _process_rows(
         A DataFrame containing the segmented trajectories.
     """
     new_rows = []
-    for _, row in rows.iterrows():
-        new_rows.extend(
-            _process_row(
-                row=row,
-                status_column=status_column,
-                default_status=default_status,
-                split_statuses=split_statuses,
-                min_segment_length=min_segment_length,
-                additional_list_columns=additional_list_columns,
-                point_count_column=point_count_column,
-            )
+    skipped = 0
+    for _, row in tqdm(rows.iterrows(), total=len(rows)):
+        result, skip = _process_row(
+            row=row,
+            status_column=status_column,
+            default_status=default_status,
+            split_statuses=split_statuses,
+            min_segment_length=min_segment_length,
+            additional_list_columns=additional_list_columns,
+            point_count_column=point_count_column,
         )
-
-    return pd.DataFrame(new_rows)
+        new_rows.extend(result)
+        skipped += skip
+        
+    return pd.DataFrame(new_rows), skipped
 
 
 def _process_in_parallel(df: pd.DataFrame, n_processes: int, **kwargs) -> pd.DataFrame:
@@ -232,8 +238,9 @@ def _process_in_parallel(df: pd.DataFrame, n_processes: int, **kwargs) -> pd.Dat
                 for chunk in chunks
             ],
         )
-
-    return pd.concat(results, ignore_index=True).reset_index(drop=True)
+    dfs = [result[0] for result in results]
+    print(f"Skipped {sum(result[1] for result in results)} segments due to errors.")
+    return pd.concat(dfs, ignore_index=True).reset_index(drop=True)
 
 
 def segment_by_status(
