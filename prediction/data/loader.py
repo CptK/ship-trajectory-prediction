@@ -45,11 +45,11 @@ def download_data(date: datetime, override: bool = False, verbose: bool = True) 
         )
 
 
-def download_all_data(start_date: datetime, end_date: datetime) -> None:
+def download_all_data(start_date: datetime, end_date: datetime, verbose: bool = False) -> None:
     """Download all data between the start_date and end_date, both inclusive."""
     all_dates = [start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)]
     for date in tqdm(all_dates):
-        download_data(date, verbose=False)
+        download_data(date, verbose=verbose)
 
 
 def load_data(start_date: datetime, end_date: datetime | None = None) -> pd.DataFrame:
