@@ -1,5 +1,31 @@
 import torch
 import torch.nn as nn
+import math
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, max_seq_len: int, dropout: float = 0.1):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        # Create positional encoding matrix
+        position = torch.arange(max_seq_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        
+        pe = torch.zeros(1, max_seq_len, d_model)
+        pe[0, :, 0::2] = torch.sin(position * div_term)
+        pe[0, :, 1::2] = torch.cos(position * div_term)
+        
+        # Register as buffer (won't be trained)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Tensor, shape [batch_size, seq_len, embedding_dim]
+        """
+        x = x + self.pe[:, :x.size(1)]
+        return self.dropout(x)
 
 
 class TRFMLSEncoderLayer(nn.Module):
@@ -16,7 +42,7 @@ class TRFMLSEncoderLayer(nn.Module):
 
         # Embedding and positional encoding for this layer
         self.input_embedding = nn.Linear(d_model, d_model)  # Maintains dimension
-        self.pos_encoder = nn.Sequential(nn.Embedding(max_seq_len, d_model), nn.Dropout(dropout))
+        self.pos_encoder = PositionalEncoding(d_model=d_model, max_seq_len=max_seq_len, dropout=dropout)
 
         # LSTM for temporal feature processing
         self.lstm = nn.LSTM(input_size=d_model, hidden_size=d_model, num_layers=1, batch_first=batch_first)
@@ -35,8 +61,8 @@ class TRFMLSEncoderLayer(nn.Module):
 
     def forward(self, src: torch.Tensor, src_mask: torch.Tensor = None) -> torch.Tensor:
         # Apply positional encoding and embedding for this layer
-        src_pos = torch.arange(0, src.size(1), device=src.device).unsqueeze(0)
-        src = self.input_embedding(src) + self.pos_encoder[0](src_pos)
+        src = self.input_embedding(src)
+        src = self.pos_encoder(src)
 
         # Process with LSTM
         lstm_out, _ = self.lstm(src)
