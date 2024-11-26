@@ -9,6 +9,8 @@ from shapely.geometry import LineString, Point
 from tqdm.auto import tqdm
 
 from prediction.preprocessing.utils import haversine
+from shapely.geometry import Point, LineString
+from shapely.validation import explain_validity
 
 
 def _interpolate_point_on_line(line: LineString, distance: float) -> Point:
@@ -58,7 +60,102 @@ def _interpolate_circular(start_angle: float, end_angle: float, fraction: float)
     return (start_angle + diff * fraction) % 360
 
 
+
 def _process_single_trajectory(row: pd.Series, interval_seconds: int = 300) -> pd.Series:
+    try:
+        line = row["geometry"]
+        times = row["timestamps"]
+        vels = row["velocities"]
+        orients = row["orientations"]
+        stats = row["statuses"]
+
+        # Convert coords to list once at the start
+        coords = list(line.coords)
+
+        # Start with the first point
+        start_time = times[0]
+        end_time = times[-1]
+
+        # Calculate end time and round to nearest interval
+        remaining_time = ((end_time - start_time).total_seconds() % interval_seconds)
+        if remaining_time > interval_seconds / 2:
+            end_time = end_time + pd.Timedelta(seconds=(interval_seconds - remaining_time))
+        else:
+            end_time = end_time - pd.Timedelta(seconds=remaining_time)
+
+        # Generate new timestamps
+        new_times = list(range(int(start_time.timestamp()), int(end_time.timestamp()) + 1, interval_seconds))
+
+        # Initialize result lists
+        new_points = []
+        new_velocities = []
+        new_orientations = []
+        new_statuses = []
+
+        # Process each new timestamp
+        for new_time in new_times:
+            if new_time == start_time.timestamp():
+                # Keep first point as is
+                new_points.append(Point(coords[0]))
+                new_velocities.append(vels[0])
+                new_orientations.append(orients[0])
+                new_statuses.append(stats[0])
+                continue
+
+            # Find bracketing points
+            next_idx = np.searchsorted(times, pd.Timestamp.fromtimestamp(new_time))
+            if next_idx >= len(times):
+                break
+            prev_idx = next_idx - 1
+
+            # Calculate interpolation fraction based on time
+            time_range = (times[next_idx] - times[prev_idx]).total_seconds()
+            time_fraction = (new_time - times[prev_idx].timestamp()) / time_range
+
+            # Interpolate position along the line
+            prev_point = Point(coords[prev_idx])
+            next_point = Point(coords[next_idx])
+            try:
+                start_dist = line.project(prev_point)
+                end_dist = line.project(next_point)
+                current_dist = start_dist + (end_dist - start_dist) * time_fraction
+                new_point = line.interpolate(current_dist)
+            except Exception as e:
+                print(f"Error projecting point: Line: {line}, Prev: {prev_point}, Next: {next_point}")
+                print(f"Shapely Validation: {explain_validity(line)}")
+                raise e
+
+            new_points.append(new_point)
+
+            # Interpolate velocity
+            new_vel = vels[prev_idx] + (vels[next_idx] - vels[prev_idx]) * time_fraction
+            new_velocities.append(new_vel)
+
+            # Interpolate orientation
+            new_orient = _interpolate_circular(orients[prev_idx], orients[next_idx], time_fraction)
+            new_orientations.append(new_orient)
+
+            # Forward fill status
+            new_statuses.append(stats[prev_idx])
+
+        # Create new LineString from points
+        new_line = LineString([(p.x, p.y) for p in new_points])
+        new_row = row.copy()
+        new_row["geometry"] = new_line
+        new_row["timestamps"] = new_times
+        new_row["velocities"] = new_velocities
+        new_row["orientations"] = new_orientations
+        new_row["statuses"] = new_statuses
+
+        return new_row
+    except Exception as e:
+        print(f"Error processing row: {row}")
+        raise e
+
+
+
+
+def _process_single_trajectoryBAK(row: pd.Series, interval_seconds: int = 300) -> pd.Series:
     """Process a single trajectory row.
 
     This function resamples a single trajectory to a fixed time interval. The trajectory is assumed to be a
